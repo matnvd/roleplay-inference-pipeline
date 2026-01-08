@@ -65,8 +65,8 @@ def chunk_text(raw_text):
     # splits Paragraph by (\n\n) first, then Sentence (.), then Word.
     # This prevents cutting a sentence in half, which confuses the AI.
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,  # ~200-300 words per chunk, longer better for narrative context?
-        chunk_overlap=200,  # Overlap ensures context flows across chunks
+        chunk_size=2000,  # ~200-300 words per chunk, longer better for narrative context?
+        chunk_overlap=400,  # Overlap ensures context flows across chunks
         separators=["\n\n", "\n", ".", " ", ""],
     )
 
@@ -76,19 +76,29 @@ def chunk_text(raw_text):
     return chunks
 
 
-# EMBED AND SENDING CHUNKS TO PINECONE
+# embed and send chunks to pinecone
 def ingest_to_pinecone(chunks):
     print(f"🚀 Uploading {len(chunks)} chunks to Pinecone index '{INDEX_NAME}'...")
 
     # once working look at mteb leaderboard and change model? llama?
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
 
-    # uploads to pinecone (sends chunks to openai to get vectors and forwards to pinecone)
+    # Nukes db everytime to avoid duplicates
+    print("🗑️ Clearing previous vectors...")
     try:
-        PineconeVectorStore.from_documents(
-            documents=chunks, embedding=embeddings, index_name=INDEX_NAME
-        )
-        print("✨ Success! Data is now live in the Vector Database.")
+        # This deletes everything in the default namespace
+        vectorstore.delete(delete_all=True)
+        print("   ✅ Index cleared.")
+    except Exception as e:
+        print(f"   ⚠️ Could not clear index (might be empty): {e}")
+
+    print(f"🚀 Uploading {len(chunks)} new chunks...")
+
+    try:
+        # # uploads to pinecone (sends chunks to openai to get vectors and forwards to pinecone)
+        vectorstore.add_documents(documents=chunks)
+        print("✅ Success! Data is now live in the Vector Database.")
     except Exception as e:
         print(f"❌ Upload failed: {e}")
 
