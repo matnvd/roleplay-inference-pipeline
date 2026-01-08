@@ -2,6 +2,8 @@ import gradio as gr
 
 # import the .env file
 from dotenv import load_dotenv
+
+# from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -10,9 +12,6 @@ from langchain_pinecone import PineconeVectorStore
 load_dotenv()
 
 # configuration
-# DATA_PATH = r"data"
-# CHROMA_PATH = r"chroma_db"
-
 embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
 
 # upgrade model in future? use better one? use fine-tuned one?
@@ -25,7 +24,7 @@ vector_store = PineconeVectorStore(
 )
 
 # Set up the vectorstore to be the retriever
-num_results = 3
+num_results = 8
 retriever = vector_store.as_retriever(search_kwargs={"k": num_results})
 
 
