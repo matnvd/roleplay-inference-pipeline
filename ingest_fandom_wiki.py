@@ -11,7 +11,8 @@ load_dotenv()
 
 # The specific Wiki page we're ripping data from... implement multiple sources in future
 # TARGET_URL = "https://leagueoflegends.fandom.com/wiki/Jinx/Arcane"
-TARGET_URL = "https://arcane.fandom.com/wiki/Jinx"
+# TARGET_URL = "https://arcane.fandom.com/wiki/Jinx"
+TARGET_URL = "https://how-i-met-your-mother.fandom.com/wiki/Barney_Stinson"
 INDEX_NAME = "project-rip"
 
 
@@ -144,20 +145,31 @@ def chunk_text(raw_text, section_map, source_url):
     return chunks
 
 
+# caching, don't do unnecessary embeddings if already ripped that url
+def check_if_url_exists(url):
+    print(f"🔍 Checking if {url} is already in the database...")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vectorstore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
+
+    dummy_vector = [0.0] * 1536
+
+    try:
+        results = vectorstore.similarity_search_by_vector_with_score(
+            embedding=dummy_vector, k=1, filter={"source": url}
+        )
+
+        if len(results) > 0:
+            return True
+        return False
+    except Exception:
+        return False
+
+
 # embed and send chunks to pinecone
 def ingest_to_pinecone(chunks):
     # once working look at mteb leaderboard and change model? llama?
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     vectorstore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
-
-    # Nukes db everytime to avoid duplicates
-    print("🗑️ Clearing previous vectors...")
-    try:
-        # This deletes everything in the default namespace
-        vectorstore.delete(delete_all=True)
-        print("   ✅ Index cleared.")
-    except Exception as e:
-        print(f"   ⚠️ Could not clear index (might be empty): {e}")
 
     print(f"🚀 Uploading {len(chunks)} chunks to Pinecone index '{INDEX_NAME}'...")
 
@@ -171,20 +183,22 @@ def ingest_to_pinecone(chunks):
 
 # MAIN FUNCTION
 if __name__ == "__main__":
-    # 1. Run the Extractor
-    raw_data, map_data = rip_wiki_content(TARGET_URL)
+    if check_if_url_exists(TARGET_URL):
+        print(
+            f"🔴 Skipping ingestion. '{TARGET_URL}' is already in the database. To force-update, run manage_db.py for that url and try again."
+        )
+    else:
+        # run extractor
+        raw_data, map_data = rip_wiki_content(TARGET_URL)
 
-    if raw_data:
-        # 2. Run the Transformer
-        final_chunks = chunk_text(raw_data, map_data, TARGET_URL)
+        if raw_data:
+            # run transformer
+            final_chunks = chunk_text(raw_data, map_data, TARGET_URL)
 
-        # creating unique ID's
-        # uuids = [str(uuid4()) for _ in range(len(final_chunks))]
+            print("\n--- METADATA: ---")
+            for i in range(min(20, len(final_chunks))):
+                print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section']}'")
+                # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
+            print("----------------------\n")
 
-        print("\n--- METADATA: ---")
-        for i in range(min(20, len(final_chunks))):
-            print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section']}'")
-            # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
-        print("----------------------\n")
-
-        ingest_to_pinecone(final_chunks)
+            ingest_to_pinecone(final_chunks)
