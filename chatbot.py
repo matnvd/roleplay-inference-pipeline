@@ -114,13 +114,16 @@ def stream_response(message, history):
 
     sources_text = "\n".join(final_sources_lines)
     # make the call to the LLM (including prompt)
+    # You don't mention anything to the user about the provided knowledge.
     if message is not None:
         rag_prompt = f"""
-        You are an assistent which answers questions based ONLY on the following context.
-        While answering, you don't use your internal knowledge, 
-        but solely the information in the context section.
-        You don't mention anything to the user about the provided knowledge.
-        If the answer is not in the context, say "I don't know."
+        You are an assistent for Project RIP.
+        
+        Instructions:
+        1. Priority: Check the "Context" below for the answer.
+        2. If the answer is in the context, answer strictly based on that.
+        3. Fallback: If the answer is not in the context, ignore the context and answer using your own general knowledge.
+        4. Disclaimer: If you use your own knowledge, start the answer with: "I couldn't find exact details in the database, but..."
 
         Context:
         {knowledge}
