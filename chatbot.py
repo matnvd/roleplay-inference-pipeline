@@ -82,19 +82,35 @@ def stream_response(message, history):
 
     # add chunks to knowledge w/ sources
     knowledge = ""
-    sources_list = []
+    sources_map = {}
 
     for doc in docs:
         knowledge += doc.page_content + "\n\n"
 
-        print(f"💥METADATA: {doc.metadata}")
-        source_name = doc.metadata.get("source", "Unkown Source")
-        page_id = doc.metadata.get("page_id", "?")
-        sources_list.append(f"{source_name} (Page ID {page_id})")
+        print(f"ℹ️METADATA: {doc.metadata}")
+        source = doc.metadata.get("source", "Unkown Source")
+        raw_sections = doc.metadata.get("section", doc.metadata.get("section", []))
 
-    unique_sources = list(set(sources_list))
-    sources_text = "\n".join([f"- {s}" for s in unique_sources])
+        if isinstance(raw_sections, str):
+            raw_sections = [raw_sections]
 
+        if source not in sources_map:
+            sources_map[source] = set()
+
+        sources_map[source].update(raw_sections)
+
+    final_sources_lines = []
+    for source, sections_set in sources_map.items():
+        sorted_sections = sorted(list(sections_set))
+
+        sections_str = (
+            '", "'.join(sorted_sections) if sorted_sections else "General Context"
+        )
+        final_sources_lines.append(
+            f'- Related sections: ["{sections_str}"]\n- Source: {source}'
+        )
+
+    sources_text = "\n".join(final_sources_lines)
     # make the call to the LLM (including prompt)
     if message is not None:
         rag_prompt = f"""
@@ -119,7 +135,7 @@ def stream_response(message, history):
             yield partial_message
 
         # append sources
-        if unique_sources:
+        if sources_text:
             yield partial_message + f"\n\n**Sources**\n{sources_text}"
 
 
