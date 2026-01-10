@@ -106,18 +106,39 @@ def chunk_text(raw_text, section_map, source_url):
         start_idx = raw_text.find(content, search_cursor)
         end_idx = start_idx + len(content)
 
-        # find all sections that touch this chunk
-        found_sections = []
-        for entry in section_map:
-            if entry["start"] < end_idx and entry["end"] > start_idx:
-                found_sections.append(entry["header"])
+        # find dominant section for each chnuk
+        if start_idx == -1:
+            dominant_section = "Unknown"
+        else:
+            search_cursor = start_idx
 
-        chunk_sections = list(dict.fromkeys(found_sections))
+            max_overlap = 0
+            dominant_section = "Unknown"
 
-        if not chunk_sections:
-            chunk_sections = ["Unknown"]
+            for entry in section_map:
+                overlap_start = max(start_idx, entry["start"])
+                overlap_end = min(end_idx, entry["end"])
 
-        chunk.metadata = {"source": source_url, "section": chunk_sections}
+                overlap_length = max(0, overlap_end - overlap_start)
+
+                if overlap_length > max_overlap:
+                    max_overlap = overlap_length
+                    dominant_section = entry["header"]
+
+        chunk.metadata = {"source": source_url, "section": dominant_section}
+
+        # # find all sections that touch this chunk
+        # found_sections = []
+        # for entry in section_map:
+        #     if entry["start"] < end_idx and entry["end"] > start_idx:
+        #         found_sections.append(entry["header"])
+
+        # chunk_sections = list(dict.fromkeys(found_sections))
+
+        # if not chunk_sections:
+        #     chunk_sections = ["Unknown"]
+
+        # chunk.metadata = {"source": source_url, "section": chunk_sections}
 
     print(f"✅ Split text into {len(chunks)} vector-ready chunks.")
     return chunks
@@ -160,8 +181,8 @@ if __name__ == "__main__":
         # creating unique ID's
         # uuids = [str(uuid4()) for _ in range(len(final_chunks))]
 
-        print("\n--- METADATA PROOF ---")
-        for i in range(min(3, len(final_chunks))):
+        print("\n--- METADATA: ---")
+        for i in range(min(20, len(final_chunks))):
             print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section']}'")
             # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
         print("----------------------\n")

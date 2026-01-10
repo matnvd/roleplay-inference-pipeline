@@ -87,17 +87,19 @@ def stream_response(message, history):
     for doc in docs:
         knowledge += doc.page_content + "\n\n"
 
-        print(f"ℹ️METADATA: {doc.metadata}")
+        print(f"ℹ️ METADATA: {doc.metadata}")
         source = doc.metadata.get("source", "Unkown Source")
-        raw_sections = doc.metadata.get("section", doc.metadata.get("section", []))
+        raw_sections = doc.metadata.get("section", "General Context")
 
-        if isinstance(raw_sections, str):
-            raw_sections = [raw_sections]
+        # if isinstance(raw_sections, str):
+        #     raw_sections = [raw_sections]
 
         if source not in sources_map:
             sources_map[source] = set()
 
-        sources_map[source].update(raw_sections)
+        sources_map[source].add(raw_sections)
+
+        # sources_map[source].update(raw_sections)
 
     final_sources_lines = []
     for source, sections_set in sources_map.items():
