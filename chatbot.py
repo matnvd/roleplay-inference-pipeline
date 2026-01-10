@@ -9,6 +9,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 
+from ingest import ingest_fandom_wiki
+
 load_dotenv()
 
 # configuration
@@ -64,7 +66,13 @@ condense_chain = (
 
 
 # call this function for every message added to the chatbot
-def stream_response(message, history):
+def stream_response(message, history, target_url):
+    # handle ingestion
+    if target_url:
+        print(f"🚀 Processing URL: {target_url}")
+        status_msg = ingest_fandom_wiki(target_url)
+        print(f"System: {status_msg}")
+
     history_str = format_history(history)
     # print(f"Input: {message}. History: {history}\n")
 
@@ -151,8 +159,15 @@ chatbot = gr.ChatInterface(
         placeholder="Ask me anything...", container=False, autoscroll=True, scale=7
     ),
     title="Project RIP Chatbot",
-    description="Ask questions about [Jinx]",
+    description="Ask questions about [Jinx]. Paste a Wiki URL below to add new knowledge!",  ## implement dynamic character naming
     # theme="soft",
+    additional_inputs=[
+        gr.Textbox(
+            label="Target Wiki URL",
+            placeholder="Paste https://arcane.fandom.com/wiki/Jinx...",
+        )
+    ],
+    additional_inputs_accordion="Add Knowledge Source",
 )
 
 # launch the Gradio app

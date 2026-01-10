@@ -181,8 +181,8 @@ def ingest_to_pinecone(chunks):
         print(f"❌ Upload failed: {e}")
 
 
-# MAIN FUNCTION
-if __name__ == "__main__":
+# MAIN (exported) FUNCTION
+def ingest_fandom_wiki(TARGET_URL):
     if check_if_url_exists(TARGET_URL):
         print(
             f"🔴 Skipping ingestion. '{TARGET_URL}' is already in the database. To force-update, run manage_db.py for that url and try again."
@@ -202,3 +202,5 @@ if __name__ == "__main__":
             print("----------------------\n")
 
             ingest_to_pinecone(final_chunks)
+
+            return f"✅ Successfully ingested: {TARGET_URL}"
