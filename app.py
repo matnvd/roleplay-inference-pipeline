@@ -13,6 +13,53 @@ from ingest import ingest_fandom_wiki
 
 load_dotenv()
 
+# for having nowrap input gradio textboxes
+custom_css = """
+/* desktop rules */
+
+@media (min-width: 768px) {
+    /* make main gradio container fill viewport height */
+    .gradio-container {
+        height: 100vh !important;
+    }
+
+    /* turn main column into a flex container */
+    #main-col {
+        height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    /* other input field styling */
+    .no-wrap textarea, .no-wrap input {
+        white-space: nowrap !important;
+        overflow-x: scroll !important;
+        /* to address bug where max_lines property converts txtbx to input and causes input to be white */
+        background-color: var(--input-background-fill) !important;
+    }
+
+    /* system status box styling */
+    .status-box {
+        flex-grow: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 0 !important;
+    }
+
+    .status-box textarea {
+        height: 100% !important;
+        overflow-y: scroll !important;
+    }
+}
+
+/* mobile rules (screens smaller than 768px) */
+@media (max-width: 767px) {
+    .status-box textarea {
+        height: 400px !important; /* Give it a fixed height so it's usable */
+    }
+}
+"""
+
 # configuration
 embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
 
@@ -176,7 +223,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
     # control panel
     with gr.Row():
-        with gr.Column(scale=4):
+        with gr.Column(scale=4, elem_id="main-col"):
             chatbot_interface = gr.ChatInterface(
                 fn=stream_response,
                 textbox=gr.Textbox(
@@ -184,32 +231,42 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 ),
             )
         with gr.Column(scale=1):
+            gr.Markdown("""
+            **How to use:**
+            1. Choose a character (or upload your own!).
+            1. Paste a Wiki URL (or two!).
+            2. Click **Upload** and wait for Success.
+            4. Chat on the left!
+            """)
+
             gr.Markdown("### 🚀 Upload Data")
 
             char_input = gr.Textbox(
                 label="Character Name",
                 placeholder="e.g. Jinx, Barney Stinson, etc.",
+                elem_classes="no-wrap",
                 scale=1,
+                lines=1,
+                max_lines=1,
             )
             url_input = gr.Textbox(
                 label="Target Wiki URL",
                 placeholder="e.g. Fandom, Wikipedia, etc.",
+                elem_classes="no-wrap",
                 scale=1,
+                lines=1,
+                max_lines=1,
             )
 
             ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
 
             ingest_status = gr.Textbox(
-                label="System Status", value="🟢 Ready 🟢", interactive=False
+                label="System Status",
+                value="🟢 Ready 🟢",
+                interactive=False,
+                scale=1,
+                elem_classes="status-box",
             )
-
-            gr.Markdown("""
-            **How to use:**
-            1. Paste a Wiki URL (or two).
-            2. Click **Upload**.
-            3. Wait for Success.
-            4. Chat on the left!
-            """)
 
     ingest_btn.click(
         fn=ingest_and_clear,
@@ -219,4 +276,4 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
 ## def main
 if __name__ == "__main__":
-    main.launch(theme="gstaff/sketch")
+    main.launch(theme="gstaff/sketch", css=custom_css)

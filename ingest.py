@@ -212,7 +212,10 @@ def ingest_fandom_wiki(url, character_name):
     print(f"🔗 New URL detected for character '{character_name}': {clean_url}")
 
     # run extractor
-    raw_data, map_data = rip_wiki_content(clean_url)
+    try:
+        raw_data, map_data = rip_wiki_content(clean_url)
+    except Exception:
+        return "❌ Failed to scrape content."
 
     if not raw_data:
         return "❌ Failed to scrape content."

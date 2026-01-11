@@ -1,5 +1,6 @@
 import os
 import time
+from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
 from pinecone import Pinecone
@@ -45,15 +46,22 @@ def main():
     if choice == "1":
         target_url = input("\nEnter the full Source URL to remove: ").strip()
 
-        if not target_url:
+        parsed = urlparse(target_url)
+        clean_url = urlunparse(parsed._replace(fragment="")).rstrip("/")
+
+        # Debug: Show user what happened
+        if target_url != clean_url:
+            print(f"🧹 Normalized URL: '{target_url}' -> '{clean_url}'")
+
+        if not clean_url:
             print("⚠️ No URL entered. Aborting.")
             return
 
-        print(f"\n🔍 Deleting vectors where metadata['source'] == '{target_url}'...")
+        print(f"\n🔍 Deleting vectors where metadata['source'] == '{clean_url}'...")
         try:
             # The Magic Line: Deletes only vectors matching the filter
-            index.delete(filter={"source": target_url})
-            print(f"✅ Success! All chunks from '{target_url}' have been removed.")
+            index.delete(filter={"source": clean_url})
+            print(f"✅ Success! All chunks from '{clean_url}' have been removed.")
 
             # Verify update
             time.sleep(2)  # Give Pinecone a moment to update stats
