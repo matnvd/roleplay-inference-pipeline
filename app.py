@@ -75,7 +75,7 @@ def ingest_and_clear(target_url, character_name):
 
 
 # call this function for every message added to the chatbot
-def stream_response(message, history, character_name, target_url):
+def stream_response(message, history):
     # handle automatic ingestion
     # if target_url:
     #     print(f"🚀 Processing URL: {target_url}")
@@ -171,13 +171,21 @@ def stream_response(message, history, character_name, target_url):
 
 
 # main ui
-with gr.Blocks(title="Project RIP Chatbot", theme=gr.themes.Soft()) as main:
+with gr.Blocks(title="Project RIP Chatbot") as main:
     gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
     # control panel
-    with gr.Group():
-        gr.Markdown("### 1. Add Knowledge Source")
-        with gr.Row():
+    with gr.Row():
+        with gr.Column(scale=4):
+            chatbot_interface = gr.ChatInterface(
+                fn=stream_response,
+                textbox=gr.Textbox(
+                    placeholder="Ask me anything...", container=False, scale=4
+                ),
+            )
+        with gr.Column(scale=1):
+            gr.Markdown("### 🚀 Upload Data")
+
             char_input = gr.Textbox(
                 label="Character Name",
                 placeholder="e.g. Jinx, Barney Stinson, etc.",
@@ -185,14 +193,23 @@ with gr.Blocks(title="Project RIP Chatbot", theme=gr.themes.Soft()) as main:
             )
             url_input = gr.Textbox(
                 label="Target Wiki URL",
-                placeholder="e.g. https://arcane.fandom.com/wiki/Jinx...",
+                placeholder="e.g. Fandom, Wikipedia, etc.",
                 scale=1,
             )
+
             ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
 
-        ingest_status = gr.Textbox(
-            label="System Status", value="Ready", interactive=False
-        )
+            ingest_status = gr.Textbox(
+                label="System Status", value="🟢 Ready 🟢", interactive=False
+            )
+
+            gr.Markdown("""
+            **How to use:**
+            1. Paste a Wiki URL (or two).
+            2. Click **Upload**.
+            3. Wait for Success.
+            4. Chat on the left!
+            """)
 
     ingest_btn.click(
         fn=ingest_and_clear,
@@ -200,13 +217,6 @@ with gr.Blocks(title="Project RIP Chatbot", theme=gr.themes.Soft()) as main:
         outputs=[ingest_status, char_input, url_input],
     )
 
-    gr.Markdown("### 2. Chat with your character data")
-    chatbot = gr.ChatInterface(
-        fn=stream_response,
-        # passing same input boxes as 'additional_inputs' to enable reading the current character name for labeling
-        additional_inputs=[char_input, url_input],
-        textbox=gr.Textbox(placeholder="Ask me anything...", container=False, scale=7),
-    )
-
+## def main
 if __name__ == "__main__":
-    main.launch()
+    main.launch(theme="gstaff/sketch")
