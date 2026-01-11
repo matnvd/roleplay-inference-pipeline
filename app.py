@@ -65,13 +65,22 @@ condense_chain = (
 )  # funnels condensed prompt through llm
 
 
+# clear input fields (wrapper for ingest_fandom_wiki)
+def ingest_and_clear(target_url, character_name):
+    # 1. Run the actual logic
+    status_msg = ingest_fandom_wiki(target_url, character_name)
+
+    # 2. Return the status + two empty strings to clear the textboxes
+    return status_msg, "", ""
+
+
 # call this function for every message added to the chatbot
 def stream_response(message, history, character_name, target_url):
-    # handle ingestion
-    if target_url:
-        print(f"🚀 Processing URL: {target_url}")
-        status_msg = ingest_fandom_wiki(target_url, character_name)
-        print(f"System: {status_msg}")
+    # handle automatic ingestion
+    # if target_url:
+    #     print(f"🚀 Processing URL: {target_url}")
+    #     status_msg = ingest_fandom_wiki(target_url, character_name)
+    #     print(f"System: {status_msg}")
 
     history_str = format_history(history)
     # print(f"Input: {message}. History: {history}\n")
@@ -86,7 +95,13 @@ def stream_response(message, history, character_name, target_url):
         search_query = message
 
     # retrieve the relevant chunks based on the formatted query
-    docs = retriever.invoke(search_query)
+    try:
+        docs = retriever.invoke(search_query)
+    except Exception:
+        docs = []
+    if not docs:
+        yield "❌ I couldn't find any information in the database. Please upload character data first."
+        return
 
     # add chunks to knowledge w/ sources
     knowledge = ""
@@ -155,26 +170,43 @@ def stream_response(message, history, character_name, target_url):
             yield partial_message + f"\n\n**Context**\n{sources_text}"
 
 
-# initiate the Gradio app
-chatbot = gr.ChatInterface(
-    stream_response,
-    textbox=gr.Textbox(
-        placeholder="Ask me anything...", container=False, autoscroll=True, scale=7
-    ),
-    title="Project RIP Chatbot",
-    description="Ask questions about [Jinx]. Paste a Wiki URL below to add new knowledge!",  ## implement dynamic character naming
-    # theme="soft",
-    additional_inputs=[
-        gr.Textbox(
-            label="Character Name", placeholder="e.g. Jinx, Barney Stinson, etc."
-        ),
-        gr.Textbox(
-            label="Target Wiki URL",
-            placeholder="Paste https://arcane.fandom.com/wiki/Jinx...",
-        ),
-    ],
-    additional_inputs_accordion="Add Knowledge Source",
-)
+# main ui
+with gr.Blocks(title="Project RIP Chatbot", theme=gr.themes.Soft()) as main:
+    gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
-# launch the Gradio app
-chatbot.launch()
+    # control panel
+    with gr.Group():
+        gr.Markdown("### 1. Add Knowledge Source")
+        with gr.Row():
+            char_input = gr.Textbox(
+                label="Character Name",
+                placeholder="e.g. Jinx, Barney Stinson, etc.",
+                scale=1,
+            )
+            url_input = gr.Textbox(
+                label="Target Wiki URL",
+                placeholder="e.g. https://arcane.fandom.com/wiki/Jinx...",
+                scale=1,
+            )
+            ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
+
+        ingest_status = gr.Textbox(
+            label="System Status", value="Ready", interactive=False
+        )
+
+    ingest_btn.click(
+        fn=ingest_and_clear,
+        inputs=[url_input, char_input],
+        outputs=[ingest_status, char_input, url_input],
+    )
+
+    gr.Markdown("### 2. Chat with your character data")
+    chatbot = gr.ChatInterface(
+        fn=stream_response,
+        # passing same input boxes as 'additional_inputs' to enable reading the current character name for labeling
+        additional_inputs=[char_input, url_input],
+        textbox=gr.Textbox(placeholder="Ask me anything...", container=False, scale=7),
+    )
+
+if __name__ == "__main__":
+    main.launch()

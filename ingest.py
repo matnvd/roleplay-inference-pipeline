@@ -1,3 +1,5 @@
+from urllib.parse import urlparse, urlunparse
+
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -163,7 +165,10 @@ def check_if_url_exists(url):
         )
 
         if len(results) > 0:
+            print(f"    ✅ Found existing match! (Score: {results[0][1]})")
             return True
+
+        print("    🟡 No match found in DB.")
         return False
     except Exception as e:
         print(f"🔴 Error checking URL existence: {e}")
@@ -194,19 +199,26 @@ def ingest_fandom_wiki(url, character_name):
     if not character_name:
         character_name = "Unknown Character"  # add counter for num of characters
 
-    if check_if_url_exists(url):
-        return f"⚠️ Skipping ingestion. '{url}' is already in the database. To force-update, run manage_db.py for that url and try again."
+    parsed = urlparse(url)
+    clean_url = urlunparse(parsed._replace(fragment="")).rstrip("/")
 
-    print(f"🔗 New URL detected for character '{character_name}': {url}")
+    # Debug: Show user what happened
+    if url != clean_url:
+        print(f"🧹 Normalized URL: '{url}' -> '{clean_url}'")
+
+    if check_if_url_exists(clean_url):
+        return f"⚠️ Skipping ingestion. '{clean_url}' is already in the DB."
+
+    print(f"🔗 New URL detected for character '{character_name}': {clean_url}")
 
     # run extractor
-    raw_data, map_data = rip_wiki_content(url)
+    raw_data, map_data = rip_wiki_content(clean_url)
 
     if not raw_data:
         return "❌ Failed to scrape content."
 
     # run transformer
-    final_chunks = chunk_text(raw_data, map_data, url, character_name)
+    final_chunks = chunk_text(raw_data, map_data, clean_url, character_name)
     if not final_chunks:
         return "❌ Failed to create chunks"
 
@@ -218,4 +230,4 @@ def ingest_fandom_wiki(url, character_name):
 
     ingest_to_pinecone(final_chunks)
 
-    return f"✅ Successfully ingested: {url} for '{character_name}'"
+    return f"✅ Successfully ingested: {clean_url} for '{character_name}'"

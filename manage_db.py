@@ -37,7 +37,7 @@ def main():
     print("What would you like to do?")
     print("1. 🗑️  Delete a specific Source URL")
     print("2. ☢️  NUKE IT (Delete ALL data)")
-    print("3. ❌ Exit")
+    print("x. ❌ Exit")
 
     choice = input("\nEnter choice (1-3): ").strip()
 
