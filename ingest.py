@@ -12,7 +12,7 @@ load_dotenv()
 # The specific Wiki page we're ripping data from... implement multiple sources in future
 # TARGET_URL = "https://leagueoflegends.fandom.com/wiki/Jinx/Arcane"
 # TARGET_URL = "https://arcane.fandom.com/wiki/Jinx"
-TARGET_URL = "https://how-i-met-your-mother.fandom.com/wiki/Barney_Stinson"
+# TARGET_URL = "https://how-i-met-your-mother.fandom.com/wiki/Barney_Stinson"
 INDEX_NAME = "project-rip"
 
 
@@ -87,7 +87,7 @@ def rip_wiki_content(url):
 
 # CHUNKING
 # nlp pre-processing: splits long txt into chunks for vector db
-def chunk_text(raw_text, section_map, source_url):
+def chunk_text(raw_text, section_map, source_url, character_name):
     print("🔪 Chunking text...")
 
     # splits Paragraph by (\n\n) first, then Sentence (.), then Word.
@@ -126,7 +126,11 @@ def chunk_text(raw_text, section_map, source_url):
                     max_overlap = overlap_length
                     dominant_section = entry["header"]
 
-        chunk.metadata = {"source": source_url, "section": dominant_section}
+        chunk.metadata = {
+            "character": character_name,
+            "source": source_url,
+            "section": dominant_section,
+        }
 
         # # find all sections that touch this chunk
         # found_sections = []
@@ -161,7 +165,8 @@ def check_if_url_exists(url):
         if len(results) > 0:
             return True
         return False
-    except Exception:
+    except Exception as e:
+        print(f"🔴 Error checking URL existence: {e}")
         return False
 
 
@@ -182,25 +187,35 @@ def ingest_to_pinecone(chunks):
 
 
 # MAIN (exported) FUNCTION
-def ingest_fandom_wiki(TARGET_URL):
-    if check_if_url_exists(TARGET_URL):
-        print(
-            f"🔴 Skipping ingestion. '{TARGET_URL}' is already in the database. To force-update, run manage_db.py for that url and try again."
-        )
-    else:
-        # run extractor
-        raw_data, map_data = rip_wiki_content(TARGET_URL)
+def ingest_fandom_wiki(url, character_name):
+    if not url:
+        return "⚠️ No URL provided."
 
-        if raw_data:
-            # run transformer
-            final_chunks = chunk_text(raw_data, map_data, TARGET_URL)
+    if not character_name:
+        character_name = "Unknown Character"  # add counter for num of characters
 
-            print("\n--- METADATA: ---")
-            for i in range(min(20, len(final_chunks))):
-                print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section']}'")
-                # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
-            print("----------------------\n")
+    if check_if_url_exists(url):
+        return f"⚠️ Skipping ingestion. '{url}' is already in the database. To force-update, run manage_db.py for that url and try again."
 
-            ingest_to_pinecone(final_chunks)
+    print(f"🔗 New URL detected for character '{character_name}': {url}")
 
-            return f"✅ Successfully ingested: {TARGET_URL}"
+    # run extractor
+    raw_data, map_data = rip_wiki_content(url)
+
+    if not raw_data:
+        return "❌ Failed to scrape content."
+
+    # run transformer
+    final_chunks = chunk_text(raw_data, map_data, url, character_name)
+    if not final_chunks:
+        return "❌ Failed to create chunks"
+
+    print("\n--- METADATA (preview): ---")
+    for i in range(min(5, len(final_chunks))):
+        print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section'][0:20]}...'")
+        # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
+    print("----------------------\n")
+
+    ingest_to_pinecone(final_chunks)
+
+    return f"✅ Successfully ingested: {url} for '{character_name}'"

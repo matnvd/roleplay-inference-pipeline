@@ -66,11 +66,11 @@ condense_chain = (
 
 
 # call this function for every message added to the chatbot
-def stream_response(message, history, target_url):
+def stream_response(message, history, character_name, target_url):
     # handle ingestion
     if target_url:
         print(f"🚀 Processing URL: {target_url}")
-        status_msg = ingest_fandom_wiki(target_url)
+        status_msg = ingest_fandom_wiki(target_url, character_name)
         print(f"System: {status_msg}")
 
     history_str = format_history(history)
@@ -97,27 +97,30 @@ def stream_response(message, history, target_url):
 
         print(f"ℹ️ METADATA: {doc.metadata}")
         source = doc.metadata.get("source", "Unkown Source")
+        chunk_char_name = doc.metadata.get("character", "Unknown Character")
         raw_sections = doc.metadata.get("section", "General Context")
 
         # if isinstance(raw_sections, str):
         #     raw_sections = [raw_sections]
 
         if source not in sources_map:
-            sources_map[source] = set()
+            sources_map[source] = {"character": chunk_char_name, "sections": set()}
 
-        sources_map[source].add(raw_sections)
+        sources_map[source]["sections"].add(raw_sections)
 
         # sources_map[source].update(raw_sections)
 
     final_sources_lines = []
-    for source, sections_set in sources_map.items():
+    for source, data in sources_map.items():
+        char_label = data["character"]
+        sections_set = data.get("sections", set())
         sorted_sections = sorted(list(sections_set))
 
         sections_str = (
             '", "'.join(sorted_sections) if sorted_sections else "General Context"
         )
         final_sources_lines.append(
-            f'- Related sections: ["{sections_str}"]\n- Source: {source}'
+            f'Character: {char_label}\n- Source: {source}\n- Related sections: ["{sections_str}"]\n'
         )
 
     sources_text = "\n".join(final_sources_lines)
@@ -129,8 +132,8 @@ def stream_response(message, history, target_url):
         
         Instructions:
         1. Priority: Check the "Context" below for the answer.
-        2. If the answer is in the context, answer strictly based on that.
-        3. Fallback: If the answer is not in the context, ignore the context and answer using your own general knowledge.
+        2. If the answer is in the context, answer strictly based on that, and don't mention any previously given context.
+        3. Fallback: If the answer is not in the context, ignore the context completely and answer using your own general knowledge.
         4. Disclaimer: If you use your own knowledge, start the answer with: "I couldn't find exact details in the database, but..."
 
         Context:
@@ -149,7 +152,7 @@ def stream_response(message, history, target_url):
 
         # append sources
         if sources_text:
-            yield partial_message + f"\n\n**Sources**\n{sources_text}"
+            yield partial_message + f"\n\n**Context**\n{sources_text}"
 
 
 # initiate the Gradio app
@@ -163,9 +166,12 @@ chatbot = gr.ChatInterface(
     # theme="soft",
     additional_inputs=[
         gr.Textbox(
+            label="Character Name", placeholder="e.g. Jinx, Barney Stinson, etc."
+        ),
+        gr.Textbox(
             label="Target Wiki URL",
             placeholder="Paste https://arcane.fandom.com/wiki/Jinx...",
-        )
+        ),
     ],
     additional_inputs_accordion="Add Knowledge Source",
 )
