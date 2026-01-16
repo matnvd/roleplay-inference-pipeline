@@ -276,4 +276,4 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
 ## def main
 if __name__ == "__main__":
-    main.launch(theme="gstaff/sketch", css=custom_css)
+    main.launch(theme="gstaff/sketch", css=custom_css, share=True)
