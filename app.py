@@ -320,44 +320,44 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     placeholder="Ask me anything...", container=False, scale=4
                 ),
             )
-            with gr.Row():
-                with gr.Column(scale=1):
-                    refresh_btn = gr.Button("🔄", size="sm")
-
-                with gr.Column(scale=9):
-                    char_display = gr.Markdown(
-                        value="Loading characters...", elem_classes="char-list-box"
-                    )
         with gr.Column(scale=1):
-            gr.Markdown("""
-            **How to use:**
-            1. Choose a character (or upload your own!).
-            1. Paste a Wiki URL (or two!).
-            2. Click **Upload** and wait for Success.
-            4. Chat on the left!
-            """)
+            # tab 1: initial uploading character section
+            with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
+                gr.Markdown("""
+                **How to use:**
+                1. Upload your **own** character (or **choose** an existing one!).
+                1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
+                2. Click **Upload** and wait for Success.
+                4. Chat on the left!
+                """)
 
-            gr.Markdown("### 🚀 Upload Data")
+                char_input = gr.Textbox(
+                    label="Character Name",
+                    placeholder="e.g. Jinx, Barney Stinson, etc.",
+                    elem_classes="no-wrap",
+                    scale=1,
+                    lines=1,
+                    max_lines=1,
+                )
+                url_input = gr.Textbox(
+                    label="Target Wiki URL",
+                    placeholder="e.g. Fandom, Wikipedia, etc.",
+                    elem_classes="no-wrap",
+                    scale=1,
+                    lines=1,
+                    max_lines=1,
+                )
 
-            char_input = gr.Textbox(
-                label="Character Name",
-                placeholder="e.g. Jinx, Barney Stinson, etc.",
-                elem_classes="no-wrap",
-                scale=1,
-                lines=1,
-                max_lines=1,
-            )
-            url_input = gr.Textbox(
-                label="Target Wiki URL",
-                placeholder="e.g. Fandom, Wikipedia, etc.",
-                elem_classes="no-wrap",
-                scale=1,
-                lines=1,
-                max_lines=1,
-            )
+                ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
 
-            ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
+            # tab 2
+            with gr.Tab("🎭 Characters", scale=2) as char_tab:
+                refresh_btn = gr.Button("🔄 Resync Database", size="sm")
+                char_display = gr.Markdown(
+                    value="Loading...", elem_classes="char-list-box"
+                )
 
+            # ingestion status + general stati updates
             system_status = gr.Textbox(
                 label="System Status",
                 value="🟢 Ready 🟢",
@@ -376,6 +376,9 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     refresh_btn.click(
         fn=resync_characters_scan, inputs=None, outputs=[char_display, system_status]
     )
+
+    # makes sure to get character list every time its clicked
+    char_tab.select(fn=get_unique_characters, inputs=None, outputs=char_display)
 
     main.load(fn=get_unique_characters, inputs=None, outputs=[char_display])
 
