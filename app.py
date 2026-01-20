@@ -1,6 +1,7 @@
-import gradio as gr
+import json
+import os
 
-# import the .env file
+import gradio as gr
 from dotenv import load_dotenv
 
 # from langchain.retrievers.multi_query import MultiQueryRetriever
@@ -8,12 +9,16 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+from pinecone import Pinecone
 
 from ingest import ingest_fandom_wiki
 
 load_dotenv()
+INDEX_NAME = "project-rip"
+API_KEY = os.getenv("PINECONE_API_KEY")
+CHAR_FILE = "characters.json"
 
-# for having nowrap input gradio textboxes
+# custom css, mainly for having nowrap input gradio textboxes
 custom_css = """
 /* desktop rules */
 
@@ -72,14 +77,88 @@ embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
 llm = ChatOpenAI(temperature=0.5, model="gpt-4o-mini")
 
 # connect to the chromadb
-vector_store = PineconeVectorStore(
-    index_name="project-rip",
+vectorStore = PineconeVectorStore(
+    index_name=INDEX_NAME,
     embedding=embeddings_model,
 )
+pc = Pinecone(api_key=API_KEY)
 
 # Set up the vectorstore to be the retriever
 num_results = 8
-retriever = vector_store.as_retriever(search_kwargs={"k": num_results})
+retriever = vectorStore.as_retriever(search_kwargs={"k": num_results})
+
+########################################
+# MANAGING MULTIPLE CHARACTERS #
+########################################
+
+
+# load character set from local json
+def load_registry():
+    if os.path.exists(CHAR_FILE):
+        with open(CHAR_FILE, "r") as f:
+            return list(json.load(f))
+    else:
+        print("🔴 Err: character registry path file does not exist")
+    return list()
+
+
+# add character to json
+def save_to_registry(new_char):
+    chars = load_registry()
+    chars.append(new_char)
+    with open(CHAR_FILE, "w") as f:
+        json.dump(list(chars), f)
+    return chars
+
+
+# format characters into md and return char_display
+def format_char_list(char_list):
+    if not char_list:
+        return "No characters found locally."
+    chars = list(char_list)
+    return "### 🎭 Available Characters:\n" + ", ".join([f"`{char}`" for char in chars])
+
+
+# return unique characters in db
+def get_unique_characters():
+    chars = load_registry()
+    return format_char_list(chars)
+
+
+# bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values
+def resync_characters_scan():
+    try:
+        index = pc.Index(INDEX_NAME)
+
+        dummy_vector = [0.0] * 1536
+        query_response = index.query(
+            vector=dummy_vector,
+            top_k=10000,  # max limit should be 10k (should grab all characters)
+            include_metadata=True,
+            include_values=False,
+        )
+
+        unique_chars = set()
+        for match in query_response["matches"]:
+            if "metadata" in match and "character" in match["metadata"]:
+                unique_chars.add(match["metadata"]["character"])
+
+        # Save this fresh scan to the file
+        with open(CHAR_FILE, "w") as f:
+            json.dump(list(unique_chars), f)
+
+        # return new list + status update
+        return format_char_list(
+            unique_chars
+        ), f"✅ Resync Complete. Found {len(unique_chars)} characters."
+
+    except Exception as e:
+        return f"⚠️ Error during resync: {str(e)}"
+
+
+########################################
+# HISTORY/SOURCING #
+########################################
 
 
 # formats history
@@ -119,11 +198,14 @@ condense_chain = (
 
 # clear input fields (wrapper for ingest_fandom_wiki)
 def ingest_and_clear(target_url, character_name):
-    # 1. Run the actual logic
+    # run logic for ingesting
     status_msg = ingest_fandom_wiki(target_url, character_name)
 
-    # 2. Return the status + two empty strings to clear the textboxes
-    return status_msg, "", ""
+    # save character to registry and update list
+    save_to_registry(character_name)
+
+    # return the status + two empty strings to clear the textboxes + updated character list
+    return status_msg, "", "", get_unique_characters()
 
 
 # call this function for every message added to the chatbot
@@ -222,7 +304,10 @@ def stream_response(message, history):
             yield partial_message + f"\n\n**Context**\n{sources_text}"
 
 
-# main ui
+########################################
+# MAIN FRONTENT/UI #
+########################################
+
 with gr.Blocks(title="Project RIP Chatbot") as main:
     gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
@@ -235,6 +320,14 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     placeholder="Ask me anything...", container=False, scale=4
                 ),
             )
+            with gr.Row():
+                with gr.Column(scale=1):
+                    refresh_btn = gr.Button("🔄", size="sm")
+
+                with gr.Column(scale=9):
+                    char_display = gr.Markdown(
+                        value="Loading characters...", elem_classes="char-list-box"
+                    )
         with gr.Column(scale=1):
             gr.Markdown("""
             **How to use:**
@@ -265,7 +358,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
             ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
 
-            ingest_status = gr.Textbox(
+            system_status = gr.Textbox(
                 label="System Status",
                 value="🟢 Ready 🟢",
                 interactive=False,
@@ -273,11 +366,18 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 elem_classes="status-box",
             )
 
+    # events
     ingest_btn.click(
         fn=ingest_and_clear,
         inputs=[url_input, char_input],
-        outputs=[ingest_status, char_input, url_input],
+        outputs=[system_status, char_input, url_input, char_display],
     )
+
+    refresh_btn.click(
+        fn=resync_characters_scan, inputs=None, outputs=[char_display, system_status]
+    )
+
+    main.load(fn=get_unique_characters, inputs=None, outputs=[char_display])
 
 ## def main
 if __name__ == "__main__":

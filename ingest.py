@@ -129,9 +129,9 @@ def chunk_text(raw_text, section_map, source_url, character_name):
                     dominant_section = entry["header"]
 
         chunk.metadata = {
-            "character_name": character_name,
-            "source_url": source_url,
-            "dominant_section": dominant_section,
+            "character": character_name,
+            "source": source_url,
+            "section": dominant_section,
         }
 
         # # find all sections that touch this chunk
@@ -155,12 +155,12 @@ def chunk_text(raw_text, section_map, source_url, character_name):
 def check_if_url_exists(url):
     print(f"🔍 Checking if {url} is already in the database...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    vectorstore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
+    vectorStore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
 
     dummy_vector = [0.0] * 1536
 
     try:
-        results = vectorstore.similarity_search_by_vector_with_score(
+        results = vectorStore.similarity_search_by_vector_with_score(
             embedding=dummy_vector, k=1, filter={"source": url}
         )
 
@@ -179,13 +179,13 @@ def check_if_url_exists(url):
 def ingest_to_pinecone(chunks):
     # once working look at mteb leaderboard and change model? llama?
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    vectorstore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
+    vectorStore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
 
     print(f"🚀 Uploading {len(chunks)} chunks to Pinecone index '{INDEX_NAME}'...")
 
     try:
         # # uploads to pinecone (sends chunks to openai to get vectors and forwards to pinecone)
-        vectorstore.add_documents(documents=chunks)
+        vectorStore.add_documents(documents=chunks)
         print("✅ Success! Data is now live in the Vector Database.")
     except Exception as e:
         print(f"❌ Upload failed: {e}")
