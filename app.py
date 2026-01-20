@@ -18,17 +18,17 @@ INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
 CHAR_FILE = "characters.json"
 
-# custom css, mainly for having nowrap input gradio textboxes
+# custom css for like everything
 custom_css = """
 /* desktop rules */
 
 @media (min-width: 768px) {
-    /* make main gradio container fill viewport height */
+    /* FILL VIEWPORT HIEGHT (for main gradio container) */
     .gradio-container {
         height: 100vh !important;
     }
 
-    /* turn main column into a flex container */
+    /* FLEX CONTAINER (for main col) */
     #main-col {
         height: 100% !important;
         display: flex !important;
@@ -40,6 +40,68 @@ custom_css = """
         line-height: 1.5 !important;
     }
 
+    /*TAB EXPANSION (need to adjust, not working properly entirely)*/
+    .expand-tabs > div:first-child {
+        display: flex !important;
+        width: 100% !important;
+        flex-direction: row !important;
+        gap: 0 !important;
+    }
+    .expand-tabs > div:first-child > button {
+        flex-grow: 1 !important;
+        flex-basis: 0 !important;
+        width: 50% !important;
+        justify-content: center !important;
+        text-align: center !important;
+    }
+
+    /* CHARACTER LIST STYLING */
+    .char-radio-group {
+        max-height: 60vh !important;
+        overflow-y: auto !important;
+        padding: 5px;
+        # background: transparent !important;
+        border: none !important;
+    }
+
+    .char-radio-group .wrap {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+
+    .char-radio-group label {
+        display: flex !important;
+        align-items: center !important;
+        width: 100% !important;
+        padding: 12px 16px !important;
+        background: var(--background-fill-primary) !important;
+        # border: 1px solid var(--border-color-primary) !important;
+        # border-radius: 12px !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        font-weight: 500 !important;
+    }
+
+    .char-radio-group label:hover {
+        background: var(--background-fill-secondary) !important;
+        # transform: translateX(4px); /* Little nudge effect */
+        border-color: var(--color-accent) !important;
+    }
+
+    .char-radio-group label.selected {
+        background: var(--neutral-700) !important;
+        color: white !important;
+        # border-color: var(--color-accent) !important;
+        font-weight: bold !important;
+        # box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    /* 6. Hide the default radio circle/bubble */
+    .char-radio-group input[type="radio"] {
+        display: none !important; /* hides bubble */
+    }
+    
     /* other input field styling */
     .no-wrap textarea, .no-wrap input {
         white-space: nowrap !important;
@@ -84,8 +146,7 @@ vectorStore = PineconeVectorStore(
 pc = Pinecone(api_key=API_KEY)
 
 # Set up the vectorstore to be the retriever
-num_results = 8
-retriever = vectorStore.as_retriever(search_kwargs={"k": num_results})
+NUM_RESULTS = 8
 
 ########################################
 # MANAGING MULTIPLE CHARACTERS #
@@ -119,13 +180,40 @@ def format_char_list(char_list):
     return "### 🎭 Available Characters:\n" + ", ".join([f"`{char}`" for char in chars])
 
 
-# return unique characters in db
-def get_unique_characters():
+# return unique characters in db to radio component
+def get_character_choices():
     chars = load_registry()
-    return format_char_list(chars)
+    return list(chars)
 
 
-# bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values
+# default to first choice
+def get_first_choice():
+    choices = get_character_choices()
+    return choices[0] if choices else None
+
+
+def refresh_list(cur_selection=None):
+    choices = get_character_choices()
+
+    if cur_selection and cur_selection in choices:
+        new_val = cur_selection
+    elif choices:
+        new_val = choices[0]
+    else:
+        new_val = None
+
+    if choices:
+        default_val = choices[0]
+        return gr.Radio(choices=choices, value=new_val, interactive=True)
+    else:
+        return gr.Radio(
+            choices=["Please upload character data"],
+            value=None,
+            interactive=False,
+        )
+
+
+# bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values, sorts list too
 def resync_characters_scan():
     try:
         index = pc.Index(INDEX_NAME)
@@ -147,6 +235,9 @@ def resync_characters_scan():
         with open(CHAR_FILE, "w") as f:
             json.dump(list(unique_chars), f)
 
+        new_choices = sorted(list(unique_chars))
+        default_val = new_choices[0] if new_choices else None
+
         # return new list + status update
         return format_char_list(
             unique_chars
@@ -165,8 +256,7 @@ def resync_characters_scan():
 def format_history(history):
     formatted_chat = ""
     for turn in history:
-        # Case A: Dictionary format (Gradio 5.x+)
-        # Example: {'role': 'user', 'content': 'Hi'}, {'role': 'assistant', 'content': 'Hello'}
+        # in the case its dictionary format
         if isinstance(turn, dict):
             role = turn.get("role")
             content = turn.get("content")
@@ -175,9 +265,7 @@ def format_history(history):
             elif role == "assistant":
                 formatted_chat += f"Assistant: {content}\n"
 
-        # Case B: List/Tuple format (Gradio 4.x)
-        # Example: ["User message", "Bot message", "Extra Info"]
-        # We manually pick [0] and [1] to ignore the "Too many values" error
+        # in the case its a list/tuple format
         elif isinstance(turn, (list, tuple)) and len(turn) >= 2:
             formatted_chat += f"User: {turn[0]}\nAssistant: {turn[1]}\n"
     return formatted_chat
@@ -205,11 +293,11 @@ def ingest_and_clear(target_url, character_name):
     save_to_registry(character_name)
 
     # return the status + two empty strings to clear the textboxes + updated character list
-    return status_msg, "", "", get_unique_characters()
+    return status_msg, "", "", refresh_list()
 
 
 # call this function for every message added to the chatbot
-def stream_response(message, history):
+def stream_response(message, history, selected_char):
     # handle automatic ingestion
     # if target_url:
     #     print(f"🚀 Processing URL: {target_url}")
@@ -228,13 +316,24 @@ def stream_response(message, history):
         print("NO HISTORY")
         search_query = message
 
+    # filtering per selected character
+    filter_dict = None
+    if selected_char and selected_char != "All Characters":
+        print(f"🎯 Filtering for character: {selected_char}")
+        filter_dict = {"character": selected_char}
+
     # retrieve the relevant chunks based on the formatted query
     try:
-        docs = retriever.invoke(search_query)
+        docs = vectorStore.similarity_search(
+            search_query, k=NUM_RESULTS, filter=filter_dict
+        )
     except Exception:
         docs = []
     if not docs:
-        yield "❌ I couldn't find any information in the database. Please upload character data first."
+        if selected_char:
+            yield f"❌ I couldn't find any information for '{selected_char}'. Please upload character data first."
+        else:
+            yield "Please upload character data first."
         return
 
     # add chunks to knowledge w/ sources
@@ -311,6 +410,9 @@ def stream_response(message, history):
 with gr.Blocks(title="Project RIP Chatbot") as main:
     gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
+    # cur char
+    char_state = gr.State("All Characters")
+
     # control panel
     with gr.Row():
         with gr.Column(scale=4, elem_id="main-col"):
@@ -319,43 +421,50 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 textbox=gr.Textbox(
                     placeholder="Ask me anything...", container=False, scale=4
                 ),
+                additional_inputs=[char_state],
             )
         with gr.Column(scale=1):
-            # tab 1: initial uploading character section
-            with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
-                gr.Markdown("""
-                **How to use:**
-                1. Upload your **own** character (or **choose** an existing one!).
-                1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
-                2. Click **Upload** and wait for Success.
-                4. Chat on the left!
-                """)
+            with gr.Tabs(elem_classes=["expand-tabs"]):
+                # tab 1: initial uploading character section
+                with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
+                    gr.Markdown("""
+                    **How to use:**
+                    1. Upload your **own** character (or **choose** an existing one!).
+                    1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
+                    2. Click **Upload** and wait for Success.
+                    4. Chat on the left!
+                    """)
 
-                char_input = gr.Textbox(
-                    label="Character Name",
-                    placeholder="e.g. Jinx, Barney Stinson, etc.",
-                    elem_classes="no-wrap",
-                    scale=1,
-                    lines=1,
-                    max_lines=1,
-                )
-                url_input = gr.Textbox(
-                    label="Target Wiki URL",
-                    placeholder="e.g. Fandom, Wikipedia, etc.",
-                    elem_classes="no-wrap",
-                    scale=1,
-                    lines=1,
-                    max_lines=1,
-                )
+                    char_input = gr.Textbox(
+                        label="Character Name",
+                        placeholder="e.g. Jinx, Barney Stinson, etc.",
+                        elem_classes="no-wrap",
+                        scale=1,
+                        lines=1,
+                        max_lines=1,
+                    )
+                    url_input = gr.Textbox(
+                        label="Target Wiki URL",
+                        placeholder="e.g. Fandom, Wikipedia, etc.",
+                        elem_classes="no-wrap",
+                        scale=1,
+                        lines=1,
+                        max_lines=1,
+                    )
 
-                ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
+                    ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
 
-            # tab 2
-            with gr.Tab("🎭 Characters", scale=2) as char_tab:
-                refresh_btn = gr.Button("🔄 Resync Database", size="sm")
-                char_display = gr.Markdown(
-                    value="Loading...", elem_classes="char-list-box"
-                )
+                # tab 2
+                with gr.Tab("🎭 Characters", scale=2) as char_tab:
+                    char_selector = gr.Radio(
+                        label="Select Character to Chat With",
+                        choices=[],
+                        value=None,
+                        interactive=True,
+                        elem_classes=["char-radio-group"],
+                        container=False,
+                    )
+                    refresh_btn = gr.Button("🔄 Resync Database", size="sm")
 
             # ingestion status + general stati updates
             system_status = gr.Textbox(
@@ -367,20 +476,22 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             )
 
     # events
+    char_selector.change(fn=lambda x: x, inputs=char_selector, outputs=char_state)
+
     ingest_btn.click(
         fn=ingest_and_clear,
         inputs=[url_input, char_input],
-        outputs=[system_status, char_input, url_input, char_display],
+        outputs=[system_status, char_input, url_input, char_selector],
     )
 
     refresh_btn.click(
-        fn=resync_characters_scan, inputs=None, outputs=[char_display, system_status]
+        fn=resync_characters_scan, inputs=None, outputs=[char_selector, system_status]
     )
 
     # makes sure to get character list every time its clicked
-    char_tab.select(fn=get_unique_characters, inputs=None, outputs=char_display)
+    char_tab.select(fn=refresh_list, inputs=[char_state], outputs=char_selector)
 
-    main.load(fn=get_unique_characters, inputs=None, outputs=[char_display])
+    main.load(fn=refresh_list, inputs=None, outputs=[char_selector])
 
 ## def main
 if __name__ == "__main__":
