@@ -129,9 +129,9 @@ def chunk_text(raw_text, section_map, source_url, character_name):
                     dominant_section = entry["header"]
 
         chunk.metadata = {
-            "character": character_name,
-            "source": source_url,
-            "section": dominant_section,
+            "character_name": character_name,
+            "source_url": source_url,
+            "dominant_section": dominant_section,
         }
 
         # # find all sections that touch this chunk

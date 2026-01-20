@@ -40,7 +40,7 @@ def main():
     print("2. ☢️  NUKE IT (Delete ALL data)")
     print("x. ❌ Exit")
 
-    choice = input("\nEnter choice (1-3): ").strip()
+    choice = input("\nEnter choice (1, 2, or x): ").strip()
 
     # --- OPTION 1: DELETE SPECIFIC URL ---
     if choice == "1":

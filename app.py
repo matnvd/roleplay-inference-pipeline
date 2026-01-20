@@ -30,6 +30,11 @@ custom_css = """
         flex-direction: column !important;
     }
 
+    #main-col .prose {
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+    }
+
     /* other input field styling */
     .no-wrap textarea, .no-wrap input {
         white-space: nowrap !important;
