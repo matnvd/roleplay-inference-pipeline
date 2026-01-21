@@ -12,19 +12,94 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 
-from ingest import ingest_fandom_wiki
+from ingest import ingest_fandom_wiki, send_traffic_notification
 
 load_dotenv()
 INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
-# CHAR_FILE = "characters.json"
 GLOBAL_SESSION_ID = "demo_roster"
+
+ACCESS_CODES = {
+    os.getenv("ADMIN_PASSWORD"): "Admin",
+    os.getenv("RESUME_PASSWORD"): "Resume",
+    os.getenv("FAMILY_FRIENDS_PASSWORD"): "Family_Friends",
+    os.getenv("PASSWORD1"): "Source1",
+}
 
 # custom css for like everything
 custom_css = """
 /* desktop rules */
 
 @media (min-width: 768px) {
+    /*MAIN APP*/
+    #main-app, 
+    #main-app > .block,
+    #main-app > .form,
+    #main-app > .wrap {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        padding: 0 !important;
+    }
+
+    /* LOGIN SCREEN */
+    #login-screen {
+        height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+    }
+
+    #login-screen .block, 
+    #login-screen .form {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+    }
+    
+    /* Style the text inside login to be white/readable */
+    #login-screen h1, #login-screen p {
+        # color: white !important;
+        text-align: center !important;
+    }
+
+    #login-row {
+        align-items: center !important;
+        gap: 10px !important;
+    }
+
+    #login-row button {
+        height: 100% !important;
+        min-height: 42px !important;
+    }
+
+    #login-row textarea, 
+    #login-row input {
+        background-color: rgba(82, 82, 82, 0.4) !important; /* Dark semi-transparent */
+        # color: white !important;       /* White text */
+        # border: 1px solid rgba(255, 255, 255, 0.7) !important; /* Subtle border */
+        min-height: 46px !important;
+    }
+
+    /* remove white bg */
+    #login-row .block {
+        background: transparent !important;
+    }
+
+    /* glow */
+    #login-row input:focus {
+        border-color: var(--color-accent) !important;
+        background-color: rgba(82, 82, 82, 0.3) !important;
+    }
+    
+    /* constrain width of login input */
+    #login-screen > .row {
+        width: 100% !important;
+        max-width: 450px !important;
+    }
+    
     /* CHAT WINDOW STYLING */
     .gradio-container {
         height: 100vh !important;
@@ -56,11 +131,12 @@ custom_css = """
 
     /* message bubbles */
     #chat-window .message {
-        background-color: rgba(30, 30, 30, 0.4) !important;
-        backdrop-filter: blur(8px) !important;
+        # background-color: rgba(30, 30, 30, 0.4) !important;
+        # backdrop-filter: blur(8px) !important;
         # border: 1px solid rgba(255, 255, 255, 0.1) !important;
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
         border-radius: 15px !important;
+        color: white !important
     }
 
     /* user bubbles */
@@ -71,7 +147,7 @@ custom_css = """
 
     /* bot bubbles */
     #chat-window .message.bot {
-        border-bottom-left-radius: 2px !important;
+        # border-bottom-left-radius: 2px !important;
         background-color: rgba(40, 40, 40, 0.5) !important;
     }
 
@@ -136,6 +212,7 @@ custom_css = """
         cursor: pointer !important;
         transition: all 0.2s ease !important;
         font-weight: 500 !important;
+        color: var(--body-text-color) !important;
     }
 
     .char-radio-group label:hover {
@@ -177,6 +254,31 @@ custom_css = """
         height: 85px !important;
         overflow-y: scroll !important;
     }
+
+    /*Light mode overrides*/
+    # body:not(.dark) #chat-window .message {
+    #     background-color: #ffffff !important; /* White background */
+    #     border: 1px solid #e5e7eb !important; /* Subtle grey border */
+    #     color: #1f2937 !important; /* Dark grey text (almost black) */
+    #     box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; /* Lighter shadow */
+    # }
+
+    # /* Light Mode User Bubble */
+    # body:not(.dark) #chat-window .message.user {
+    #     background-color: #f3f4f6 !important; /* Light Grey/Blue */
+    #     border-bottom-right-radius: 2px !important;
+    # }
+
+    # /* Light Mode Bot Bubble */
+    # body:not(.dark) #chat-window .message.bot {
+    #     background-color: #ffffff !important; /* Pure White */
+    #     border-bottom-left-radius: 2px !important;
+    # }
+    
+    # /* Ensure markdown links/code in light mode are readable */
+    # body:not(.dark) #chat-window .message p {
+    #     color: #1f2937 !important;
+    # }
 }
 
 /* mobile rules (screens smaller than 768px) */
@@ -396,8 +498,17 @@ condense_chain = condense_prompt | llm | StrOutputParser()
 
 # clear input fields (wrapper for ingest_fandom_wiki)
 def ingest_and_clear(
-    target_url, character_name, session_id, session_history, global_chars
+    target_url,
+    character_name,
+    session_id,
+    session_history,
+    global_chars,
+    traffic_source,
 ):
+    # security check
+    if not traffic_source or traffic_source == "Unknown":
+        raise gr.Error("⛔ Unauthorized: Please log in first.")
+
     if not session_id:
         return (
             "⚠️ Error: No session ID found. Refresh page",
@@ -411,7 +522,9 @@ def ingest_and_clear(
         )
 
     # run logic for ingesting
-    status_msg = ingest_fandom_wiki(target_url, character_name, session_id)
+    status_msg = ingest_fandom_wiki(
+        target_url, character_name, session_id, traffic_source
+    )
     # save_to_registry(character_name)
     # new_radio, _, new_char_list = resync_characters_scan(session_id, character_name)
 
@@ -441,16 +554,31 @@ def update_char_ui(selected_char):
 
 
 # refactored stream_response for gradio chatbot
-def add_message(message, history):
+def add_message(message, history, traffic_source, has_notified, session_id):
+    # security check
+    if not traffic_source or traffic_source == "Unknown":
+        # If they bypassed the login screen, give them an error
+        raise gr.Error("⛔ Unauthorized: Please log in first.")
+
     if message.strip() == "":
         return "", history
 
     if history is None:
         history = []
 
+    # traffic sourcing
+    if not has_notified:
+        if traffic_source != "Admin":
+            print(f"🔔 First message from: {traffic_source}")
+            send_traffic_notification(traffic_source, session_id)
+        else:
+            print(f"🔔 Skipped traffic notification from: {traffic_source}")
+
+        has_notified = True
+
     history.append({"role": "user", "content": message})
 
-    return "", history
+    return "", history, has_notified
 
 
 # new main rag logic
@@ -520,7 +648,7 @@ def bot_response(history, selected_char, session_id):
     knowledge = ""
     sources_map = {}
     for doc in docs:
-        print(f"ℹ️ METADATA: {doc.metadata}")
+        # print(f"ℹ️ METADATA: {doc.metadata}")
         knowledge += doc.page_content + "\n\n"
         source = doc.metadata.get("source", "Unknown")
         chunk_char_name = doc.metadata.get("character", "Unknown")
@@ -606,6 +734,8 @@ def bot_response(history, selected_char, session_id):
 with gr.Blocks(title="Project RIP Chatbot") as main:
     # generate unique session id on load
     session_state = gr.State(get_session_id)
+    login_tracker_state = gr.State(False)
+    traffic_source_state = gr.State("Unknown")
 
     # stores global chars fetched from db
     global_char_state = gr.State([])
@@ -616,109 +746,168 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # stores cur selection
     char_state = gr.State("No Character Selected")
 
-    gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
+    # custom login screen (instead of default auth)
+    with gr.Column(elem_id="login-screen", visible=True) as login_col:
+        gr.Markdown(
+            """
+            # 🔒 Project RIP Access
+            Please enter the access code to continue.
+            """,
+            elem_classes=["prose"],
+        )
 
-    # cur char
-    char_state = gr.State("No Character Selected")
-
-    # control panel
-    with gr.Row():
-        with gr.Column(scale=4, elem_id="main-col"):
-            chatbot = gr.Chatbot(
-                label="No Character Selected",
-                elem_id="chat-window",
-                scale=1,
-                avatar_images=None,
-                # additional_inputs=[char_state],
+        with gr.Row(elem_id="login-row"):
+            pass_input = gr.Textbox(
+                label="Access Code",
+                type="password",
+                placeholder="Enter password...",
+                show_label=False,
+                scale=4,
+                autofocus=True,
             )
+            login_btn = gr.Button("Enter", variant="primary", scale=1)
 
-            with gr.Row(elem_id="input-row"):
-                txt_input = gr.Textbox(
-                    placeholder="Ask me anything...",
-                    container=False,
-                    scale=8,
-                    autofocus=True,
+        login_error_msg = gr.Markdown("", visible=False)
+
+    # main app col
+    with gr.Column(elem_id="main-app", visible=False) as main_app_col:
+        gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
+
+        # control panel
+        with gr.Row():
+            with gr.Column(scale=4, elem_id="main-col"):
+                chatbot = gr.Chatbot(
+                    label="No Character Selected",
+                    elem_id="chat-window",
+                    scale=1,
+                    avatar_images=None,
+                    # additional_inputs=[char_state],
                 )
-                submit_btn = gr.Button(
-                    value="",
-                    # This URL points to the exact SVG version of the Google Material 'Send' icon
-                    icon="https://api.iconify.design/material-symbols:send-rounded.svg?color=%23ffffff",
-                    variant="primary",
-                    scale=0,
-                    min_width=50,
-                )
 
-            current_char_display = gr.Textbox(
-                label="Active Character",
-                value="No Character Available",
-                interactive=False,
-                lines=1,
-                # max_lines=1,
-                elem_id="active-char-box",
-            )
-        with gr.Column(scale=1):
-            with gr.Tabs(elem_classes=["expand-tabs"]):
-                # tab 1: initial uploading character section
-                with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
-                    gr.Markdown("""
-                    **How to use:**
-                    1. Upload your **own** character (or **choose** an existing one!).
-                    1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
-                    2. Click **Upload** and wait for Success.
-                    4. Chat on the left!
-                    """)
-
-                    char_input = gr.Textbox(
-                        label="Character Name",
-                        placeholder="e.g. Jinx, Barney Stinson, etc.",
-                        elem_classes="no-wrap",
-                        scale=1,
-                        lines=1,
-                        max_lines=1,
-                    )
-                    url_input = gr.Textbox(
-                        label="Target Wiki URL",
-                        placeholder="e.g. Fandom, Wikipedia, etc.",
-                        elem_classes="no-wrap",
-                        scale=1,
-                        lines=1,
-                        max_lines=1,
-                    )
-
-                    ingest_btn = gr.Button("🚀 Upload Data", variant="primary", scale=1)
-
-                # tab 2
-                with gr.Tab("🎭 Characters", scale=2) as char_tab:
-                    char_selector = gr.Radio(
-                        label="Select Character to Chat With",
-                        choices=[],
-                        value=None,
-                        interactive=True,
-                        elem_classes=["char-radio-group"],
+                with gr.Row(elem_id="input-row"):
+                    txt_input = gr.Textbox(
+                        placeholder="Ask me anything...",
                         container=False,
+                        scale=8,
+                        autofocus=True,
                     )
-                    refresh_btn = gr.Button("🔄 Resync Database", size="sm")
+                    submit_btn = gr.Button(
+                        value="",
+                        # This URL points to the exact SVG version of the Google Material 'Send' icon
+                        icon="https://api.iconify.design/material-symbols:send-rounded.svg?color=%23ffffff",
+                        variant="primary",
+                        scale=0,
+                        min_width=50,
+                    )
 
-            # ingestion status + general stati updates
-            system_status = gr.Textbox(
-                label="System Status",
-                value="🟢 Ready 🟢",
-                interactive=False,
-                lines=10,
-                scale=2,
-                max_lines=20,
-                elem_classes="status-box",
-            )
+                current_char_display = gr.Textbox(
+                    label="Active Character",
+                    value="No Character Available",
+                    interactive=False,
+                    lines=1,
+                    # max_lines=1,
+                    elem_id="active-char-box",
+                )
+            with gr.Column(scale=1):
+                with gr.Tabs(elem_classes=["expand-tabs"]):
+                    # tab 1: initial uploading character section
+                    with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
+                        gr.Markdown("""
+                        **How to use:**
+                        1. Upload your **own** character (or **choose** an existing one!).
+                        1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
+                        2. Click **Upload** and wait for Success.
+                        4. Chat on the left!
+                        """)
+
+                        char_input = gr.Textbox(
+                            label="Character Name",
+                            placeholder="e.g. Jinx, Barney Stinson, etc.",
+                            elem_classes="no-wrap",
+                            scale=1,
+                            lines=1,
+                            max_lines=1,
+                        )
+                        url_input = gr.Textbox(
+                            label="Target Wiki URL",
+                            placeholder="e.g. Fandom, Wikipedia, etc.",
+                            elem_classes="no-wrap",
+                            scale=1,
+                            lines=1,
+                            max_lines=1,
+                        )
+
+                        ingest_btn = gr.Button(
+                            "🚀 Upload Data", variant="primary", scale=1
+                        )
+
+                    # tab 2
+                    with gr.Tab("🎭 Characters", scale=2) as char_tab:
+                        char_selector = gr.Radio(
+                            label="Select Character to Chat With",
+                            choices=[],
+                            value=None,
+                            interactive=True,
+                            elem_classes=["char-radio-group"],
+                            container=False,
+                        )
+                        refresh_btn = gr.Button("🔄 Resync Database", size="sm")
+
+                # ingestion status + general stati updates
+                system_status = gr.Textbox(
+                    label="System Status",
+                    value="🟢 Ready 🟢",
+                    interactive=False,
+                    lines=10,
+                    scale=2,
+                    max_lines=20,
+                    elem_classes="status-box",
+                )
+
+        # authenticatino function
+        def verify_login(password):
+            if password in ACCESS_CODES:
+                source_label = ACCESS_CODES[password]
+                print(f"🔓 Traffic source: {source_label}")
+
+                # Return: Hide Login, Show App, Set User State, Clear Error
+                return {
+                    login_col: gr.Column(visible=False),
+                    main_app_col: gr.Column(visible=True),
+                    traffic_source_state: source_label,
+                    login_error_msg: gr.Markdown("", visible=False),
+                }
+            else:
+                print(f"🔒 Failed Login Attempt: {password}")
+                return {
+                    login_col: gr.Column(visible=True),
+                    main_app_col: gr.Column(visible=False),
+                    traffic_source_state: "Unknown",
+                    login_error_msg: gr.Markdown(
+                        "❌ Incorrect Access Code", visible=True
+                    ),
+                }
 
     # events
-    chat_inputs = [txt_input, chatbot]
+    login_targets = [login_col, main_app_col, traffic_source_state, login_error_msg]
+
+    login_btn.click(fn=verify_login, inputs=pass_input, outputs=login_targets)
+    pass_input.submit(fn=verify_login, inputs=pass_input, outputs=login_targets)
+
+    chat_inputs = [
+        txt_input,
+        chatbot,
+        traffic_source_state,
+        login_tracker_state,
+        session_state,
+    ]
     chat_outputs = [txt_input, chatbot]
 
     # user sending message
     msg_event = txt_input.submit(
         fn=add_message,
-        inputs=[txt_input, chatbot],
-        outputs=[txt_input, chatbot],
+        inputs=chat_inputs,
+        outputs=[txt_input, chatbot, login_tracker_state],
     ).then(
         fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
     )
@@ -726,8 +915,8 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # send button
     submit_btn.click(
         fn=add_message,
-        inputs=[txt_input, chatbot],
-        outputs=[txt_input, chatbot],
+        inputs=chat_inputs,
+        outputs=[txt_input, chatbot, login_tracker_state],
     ).then(
         fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
     )
@@ -746,6 +935,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_state,
             session_char_history,
             global_char_state,
+            traffic_source_state,
         ],
         outputs=[
             system_status,

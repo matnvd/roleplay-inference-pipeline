@@ -21,7 +21,7 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 
 # for notifying pinecone db updates to avoid overusage
-def send_discord_notification(character_name, source_url, session_id):
+def send_upload_notification(character_name, source_url, session_id):
     if not DISCORD_WEBHOOK_URL:
         print("⚠️ No Discord Webhook URL found in .env, skipping notification.")
         return
@@ -40,7 +40,7 @@ def send_discord_notification(character_name, source_url, session_id):
                         "value": f"[Wiki Link]({source_url})",
                         "inline": True,
                     },
-                    {"name": "# Session_ID", "value": session_id, "inline": True},
+                    {"name": "Session_ID", "value": session_id, "inline": True},
                 ],
                 "footer": {"text": "Project RIP Vector Database"},
             }
@@ -49,9 +49,42 @@ def send_discord_notification(character_name, source_url, session_id):
 
     try:
         requests.post(DISCORD_WEBHOOK_URL, json=payload)
-        print("🔔 Discord notification sent!")
+        print("🔔 Character upload Discord notification sent!")
     except Exception as e:
-        print(f"❌ Failed to send Discord notification: {e}")
+        print(f"❌ Failed to send upload notification: {e}")
+
+
+# for notifying ab diff trafic sources
+def send_traffic_notification(traffic_source, session_id):
+    if not DISCORD_WEBHOOK_URL:
+        print("⚠️ No Discord Webhook URL found in .env, skipping notification.")
+        return
+
+    payload = {
+        "username": "Project RIP Ingestion Bot",
+        # "avatar_url": "https://cdn-icons-png.flaticon.com/512/2040/2040504.png",
+        "embeds": [
+            {
+                "title": "🔓 New Login Alert!",
+                "color": 15548997,  # red
+                "fields": [
+                    {
+                        "name": "🌐 Traffic Source",
+                        "value": traffic_source,
+                        "inline": True,
+                    },
+                    {"name": "Session_ID", "value": session_id, "inline": True},
+                ],
+                "footer": {"text": "Project RIP Vector Database"},
+            }
+        ],
+    }
+
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        print("🔔 Traffic source Discord notification sent!")
+    except Exception as e:
+        print(f"❌ Failed to send traffic notification: {e}")
 
 
 # CONTENT COLLECTION
@@ -231,7 +264,7 @@ def ingest_to_pinecone(chunks):
 
 
 # MAIN (exported) FUNCTION
-def ingest_fandom_wiki(url, character_name, session_id):
+def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
     if not url:
         return "⚠️ No URL provided."
 
@@ -277,6 +310,9 @@ def ingest_fandom_wiki(url, character_name, session_id):
 
     ingest_to_pinecone(final_chunks)
 
-    send_discord_notification(character_name, clean_url, session_id)
+    if traffic_source != "Admin":
+        send_upload_notification(character_name, clean_url, session_id)
+    else:
+        print("🔔 skipped upload notification")
 
     return f"✅ Successfully ingested: {clean_url} for '{character_name}'"
