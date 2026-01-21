@@ -1,6 +1,6 @@
-import json
 import os
 import re
+import uuid
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -17,7 +17,8 @@ from ingest import ingest_fandom_wiki
 load_dotenv()
 INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
-CHAR_FILE = "characters.json"
+# CHAR_FILE = "characters.json"
+GLOBAL_SESSION_ID = "demo_roster"
 
 # custom css for like everything
 custom_css = """
@@ -173,7 +174,7 @@ custom_css = """
     }
 
     .status-box textarea {
-        height: 100% !important;
+        height: 250px !important;
         overflow-y: scroll !important;
     }
 }
@@ -203,72 +204,106 @@ pc = Pinecone(api_key=API_KEY)
 NUM_RESULTS = 8
 
 ########################################
-# MANAGING MULTIPLE CHARACTERS #
+# MANAGING MULTIPLE SESSIONS #
 ########################################
 
 
-# load character set from local json
-def load_registry():
-    if os.path.exists(CHAR_FILE):
-        with open(CHAR_FILE, "r") as f:
-            return list(json.load(f))
-    else:
-        print("🔴 Err: character registry path file does not exist")
-    return list()
+def get_session_id():
+    new_id = str(uuid.uuid4())
+    print(f"\n\n🆕 New Session Started: {new_id}")
+    return new_id
 
 
-# add character to json
-def save_to_registry(new_char):
-    chars = load_registry()
-    chars.append(new_char)
-    with open(CHAR_FILE, "w") as f:
-        json.dump(list(chars), f)
-    return chars
+def update_radio_list(global_list, session_list, selected=None):
+    # start w/ sorted global list
+    combined_choices = sorted(list(global_list))
+
+    # append session characters by order of upload
+    for char in session_list:
+        if char not in combined_choices:
+            combined_choices.append(char)
+
+    if not combined_choices:
+        return gr.Radio(
+            choices=["Please upload character data"], value=None, interactive=False
+        )
+
+    # Keep selection if valid, else pick first
+    new_val = (
+        selected if (selected and selected in combined_choices) else combined_choices[0]
+    )
+
+    return gr.Radio(choices=combined_choices, value=new_val, interactive=True)
+
+
+# scan pinecone for global characters only
+def fetch_global_characters():
+    try:
+        index = pc.Index(INDEX_NAME)
+        dummy_vector = [0.0] * 1536
+
+        query_response = index.query(
+            vector=dummy_vector,
+            top_k=10000,
+            include_metadata=True,
+            include_values=False,
+            filter={"session_id": GLOBAL_SESSION_ID},
+        )
+
+        unique_chars = set()
+        for match in query_response["matches"]:
+            if "metadata" in match and "character" in match["metadata"]:
+                unique_chars.add(match["metadata"]["character"])
+
+        return list(unique_chars)
+
+    except Exception as e:
+        print(f"Resync Error: {e}")
+        return []
+
+
+# Wrapper for resync button
+def manual_resync(session_history, current_selection):
+    global_chars = fetch_global_characters()
+
+    print(f"🌎 Global Chars: {global_chars}")
+    return (
+        update_radio_list(global_chars, session_history, current_selection),
+        f"✅ Synced. {len(global_chars)} Global + {len(session_history)} Session characters.",
+        global_chars,  # update global state
+    )
+
+
+########################################
+# MANAGING MULTIPLE CHARACTERS #
+########################################
 
 
 # format characters into md and return char_display
 def format_char_list(char_list):
     if not char_list:
-        return "No characters found locally."
-    chars = list(char_list)
-    return "### 🎭 Available Characters:\n" + ", ".join([f"`{char}`" for char in chars])
+        return "No characters found in this session."
+    return "### 🎭 Available Characters:\n" + ", ".join(
+        [f"`{char}`" for char in char_list]
+    )
 
 
-# return unique characters in db to radio component
-def get_character_choices():
-    chars = load_registry()
-    return list(chars)
-
-
-# default to first choice
-def get_first_choice():
-    choices = get_character_choices()
-    return choices[0] if choices else None
-
-
-# refresh character list
-def refresh_list(cur_selection=None):
-    choices = get_character_choices()
-
-    if cur_selection and cur_selection in choices:
-        new_val = cur_selection
-    elif choices:
-        new_val = choices[0]
-    else:
-        new_val = None
-
-    if choices:
-        return gr.Radio(choices=choices, value=new_val, interactive=True)
-    else:
+# compononent that accounts for empty character list
+def generate_radio(choices, selected=None):
+    if not choices:
         return gr.Radio(
-            choices=["Please upload character data"],
-            value=None,
-            interactive=False,
+            choices=["Please upload character data"], value=None, interactive=False
         )
+
+    # Keep selection if it exists in new choices, otherwise pick first
+    new_val = selected if (selected and selected in choices) else choices[0]
+    return gr.Radio(choices=choices, value=new_val, interactive=True)
 
 
 # bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values, sorts list too
-def resync_characters_scan():
+def resync_characters_scan(session_id, current_selection):
+    if not session_id:
+        return generate_radio([]), "⚠️ Error: No session ID", []
     try:
         index = pc.Index(INDEX_NAME)
 
@@ -278,6 +313,7 @@ def resync_characters_scan():
             top_k=10000,  # max limit should be 10k (should grab all characters)
             include_metadata=True,
             include_values=False,
+            filter={"session_id": session_id},
         )
 
         unique_chars = set()
@@ -285,20 +321,16 @@ def resync_characters_scan():
             if "metadata" in match and "character" in match["metadata"]:
                 unique_chars.add(match["metadata"]["character"])
 
-        # Save this fresh scan to the file
-        with open(CHAR_FILE, "w") as f:
-            json.dump(list(unique_chars), f)
-
         new_choices = sorted(list(unique_chars))
-        default_val = new_choices[0] if new_choices else None
+        # default_val = new_choices[0] if new_choices else None
 
         print(f"👦 new char list: {unique_chars}")
 
         # return new list + status update
         return (
-            gr.Radio(choices=new_choices, value=default_val, interactive=True),
+            generate_radio(new_choices, current_selection),
             f"✅ Resync Complete. Found {len(unique_chars)} characters.",
-            default_val,
+            new_choices,
         )
 
     except Exception as e:
@@ -359,26 +391,46 @@ condense_prompt = PromptTemplate.from_template(
 
     Refined Query:"""
 )
-condense_chain = (
-    condense_prompt | llm | StrOutputParser()
-)  # funnels condensed prompt through llm
+condense_chain = condense_prompt | llm | StrOutputParser()
 
 
 # clear input fields (wrapper for ingest_fandom_wiki)
-def ingest_and_clear(target_url, character_name):
+def ingest_and_clear(
+    target_url, character_name, session_id, session_history, global_chars
+):
+    if not session_id:
+        return (
+            "⚠️ Error: No session ID found. Refresh page",
+            "",
+            "",
+            gr.update(),
+            "No Character Selected",
+            "Active Character: None",
+            gr.update(),
+            session_history,
+        )
+
     # run logic for ingesting
-    status_msg = ingest_fandom_wiki(target_url, character_name)
-    save_to_registry(character_name)
+    status_msg = ingest_fandom_wiki(target_url, character_name, session_id)
+    # save_to_registry(character_name)
+    # new_radio, _, new_char_list = resync_characters_scan(session_id, character_name)
+
+    if "✅ Successfully ingested" in status_msg:
+        if character_name not in session_history:
+            session_history.append(character_name)
+
+    new_radio = update_radio_list(global_chars, session_history, character_name)
 
     # return the status + two empty strings to clear the textboxes + updated character list
     return (
         status_msg,  # system status
         "",  # clear char_input
         "",  # clear url_input
-        refresh_list(character_name),  # refresh list
+        new_radio,  # refresh list
         character_name,  # update char_state
         f"Active Character: {character_name}",  # update current char display
         gr.Chatbot(label=character_name),  # update chatbot label
+        session_history,  # updated list
     )
 
 
@@ -402,7 +454,7 @@ def add_message(message, history):
 
 
 # new main rag logic
-def bot_response(history, selected_char):
+def bot_response(history, selected_char, session_id):
     if not history:
         return history
 
@@ -428,15 +480,27 @@ def bot_response(history, selected_char):
         search_query = str(user_message)
         print(f"\n🔍 NO HISTORY: {search_query}")
 
-    # filtering per selected character
-    filter_dict = None
+    # filtering per selected character from session or global
+    visibility_filter = {
+        "$or": [
+            {"session_id": {"$eq": session_id}},
+            {"session_id": {"$eq": GLOBAL_SESSION_ID}},
+        ]
+    }
+
+    char_filter = {}
+    # filter_dict = {"session_id": session_id}
     if selected_char and selected_char != "No Character Selected":
         print(f"\n🎯 Filtering for character: {selected_char}")
-        filter_dict = {"character": selected_char}
+        char_filter = {"character": {"$eq": selected_char}}
+
+    final_filter = {"$and": [visibility_filter, char_filter]}
+
+    print(f"🔍 searching pinecone with filter: {final_filter}")
 
     try:
         docs = vectorStore.similarity_search(
-            search_query, k=NUM_RESULTS, filter=filter_dict
+            search_query, k=NUM_RESULTS, filter=final_filter
         )
     except Exception as e:
         print(f"🔴 Pinecone error: {e}")
@@ -445,8 +509,8 @@ def bot_response(history, selected_char):
     if not docs:
         fallback_msg = (
             "Please upload character data first."
-            if not selected_char
-            else f"I couldn't find info for '{selected_char}'."
+            if not selected_char or selected_char == "No Character Selected"
+            else f"I, '{selected_char}', have no clue what you're talking about. Can you say that again?"
         )
         history.append({"role": "assistant", "content": fallback_msg})
         yield history
@@ -540,6 +604,18 @@ def bot_response(history, selected_char):
 ########################################
 
 with gr.Blocks(title="Project RIP Chatbot") as main:
+    # generate unique session id on load
+    session_state = gr.State(get_session_id)
+
+    # stores global chars fetched from db
+    global_char_state = gr.State([])
+
+    # stores sessions chars
+    session_char_history = gr.State([])
+
+    # stores cur selection
+    char_state = gr.State("No Character Selected")
+
     gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
     # cur char
@@ -628,24 +704,33 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 label="System Status",
                 value="🟢 Ready 🟢",
                 interactive=False,
-                scale=1,
+                lines=10,
+                scale=2,
+                max_lines=20,
                 elem_classes="status-box",
             )
 
     # events
+    chat_inputs = [txt_input, chatbot]
+    chat_outputs = [txt_input, chatbot]
+
     # user sending message
     msg_event = txt_input.submit(
         fn=add_message,
         inputs=[txt_input, chatbot],
         outputs=[txt_input, chatbot],
-    ).then(fn=bot_response, inputs=[chatbot, char_state], outputs=[chatbot])
+    ).then(
+        fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
+    )
 
     # send button
     submit_btn.click(
         fn=add_message,
         inputs=[txt_input, chatbot],
         outputs=[txt_input, chatbot],
-    ).then(fn=bot_response, inputs=[chatbot, char_state], outputs=[chatbot])
+    ).then(
+        fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
+    )
 
     char_selector.change(
         fn=update_char_ui,
@@ -655,7 +740,13 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
     ingest_btn.click(
         fn=ingest_and_clear,
-        inputs=[url_input, char_input],
+        inputs=[
+            url_input,
+            char_input,
+            session_state,
+            session_char_history,
+            global_char_state,
+        ],
         outputs=[
             system_status,
             char_input,
@@ -664,19 +755,32 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             char_state,
             current_char_display,
             chatbot,
+            session_char_history,
         ],
     )
 
     refresh_btn.click(
-        fn=resync_characters_scan,
-        inputs=None,
-        outputs=[char_selector, system_status, char_state],
+        fn=manual_resync,
+        inputs=[session_char_history, char_state],
+        outputs=[
+            char_selector,
+            system_status,
+            global_char_state,
+        ],
     )
 
     # makes sure to get character list every time its clicked
-    char_tab.select(fn=refresh_list, inputs=[char_state], outputs=char_selector)
+    # char_tab.select(
+    #     fn=manual_resync,
+    #     inputs=[session_char_history, char_state],
+    #     outputs=[char_selector, system_status, global_char_state],
+    # )
 
-    main.load(fn=refresh_list, inputs=None, outputs=[char_selector])
+    main.load(
+        fn=manual_resync,
+        inputs=[session_char_history, char_state],
+        outputs=[char_selector, system_status, global_char_state],
+    )
 
 ## def main
 if __name__ == "__main__":

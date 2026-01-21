@@ -89,7 +89,7 @@ def rip_wiki_content(url):
 
 # CHUNKING
 # nlp pre-processing: splits long txt into chunks for vector db
-def chunk_text(raw_text, section_map, source_url, character_name):
+def chunk_text(raw_text, section_map, source_url, character_name, session_id):
     print("🔪 Chunking text...")
 
     # splits Paragraph by (\n\n) first, then Sentence (.), then Word.
@@ -132,6 +132,7 @@ def chunk_text(raw_text, section_map, source_url, character_name):
             "character": character_name,
             "source": source_url,
             "section": dominant_section,
+            "session_id": session_id,  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
         }
 
         # # find all sections that touch this chunk
@@ -152,7 +153,7 @@ def chunk_text(raw_text, section_map, source_url, character_name):
 
 
 # caching, don't do unnecessary embeddings if already ripped that url
-def check_if_url_exists(url):
+def check_if_url_exists(url, session_id):
     print(f"🔍 Checking if {url} is already in the database...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     vectorStore = PineconeVectorStore(index_name=INDEX_NAME, embedding=embeddings)
@@ -161,7 +162,9 @@ def check_if_url_exists(url):
 
     try:
         results = vectorStore.similarity_search_by_vector_with_score(
-            embedding=dummy_vector, k=1, filter={"source": url}
+            embedding=dummy_vector,
+            k=1,
+            filter={"source": url, "session_id": session_id},
         )
 
         if len(results) > 0:
@@ -192,9 +195,12 @@ def ingest_to_pinecone(chunks):
 
 
 # MAIN (exported) FUNCTION
-def ingest_fandom_wiki(url, character_name):
+def ingest_fandom_wiki(url, character_name, session_id):
     if not url:
         return "⚠️ No URL provided."
+
+    if not session_id:
+        return "⚠️ Error: No Session ID provided."
 
     if not character_name:
         character_name = "Unknown Character"  # add counter for num of characters
@@ -206,10 +212,12 @@ def ingest_fandom_wiki(url, character_name):
     if url != clean_url:
         print(f"🧹 Normalized URL: '{url}' -> '{clean_url}'")
 
-    if check_if_url_exists(clean_url):
+    if check_if_url_exists(clean_url, session_id):
         return f"⚠️ Skipping ingestion. '{clean_url}' is already in the DB."
 
-    print(f"🔗 New URL detected for character '{character_name}': {clean_url}")
+    print(
+        f"🔗 New URL detected for character '{character_name}': {clean_url} (Session: {session_id})"
+    )
 
     # run extractor
     try:
@@ -221,7 +229,7 @@ def ingest_fandom_wiki(url, character_name):
         return "❌ Failed to scrape content."
 
     # run transformer
-    final_chunks = chunk_text(raw_data, map_data, clean_url, character_name)
+    final_chunks = chunk_text(raw_data, map_data, clean_url, character_name, session_id)
     if not final_chunks:
         return "❌ Failed to create chunks"
 
