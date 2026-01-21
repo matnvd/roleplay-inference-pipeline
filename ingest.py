@@ -12,10 +12,7 @@ from langchain_text_splitters import (
 
 load_dotenv()
 
-# The specific Wiki page we're ripping data from... implement multiple sources in future
-# TARGET_URL = "https://leagueoflegends.fandom.com/wiki/Jinx/Arcane"
-# TARGET_URL = "https://arcane.fandom.com/wiki/Jinx"
-# TARGET_URL = "https://how-i-met-your-mother.fandom.com/wiki/Barney_Stinson"
+# The specific Wiki page we're ripping data from
 INDEX_NAME = "project-rip"
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
@@ -48,7 +45,8 @@ def send_upload_notification(character_name, source_url, session_id):
     }
 
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response.raise_for_status()
         print("🔔 Character upload Discord notification sent!")
     except Exception as e:
         print(f"❌ Failed to send upload notification: {e}")
@@ -81,7 +79,8 @@ def send_traffic_notification(traffic_source, session_id):
     }
 
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response.raise_for_status()
         print("🔔 Traffic source Discord notification sent!")
     except Exception as e:
         print(f"❌ Failed to send traffic notification: {e}")
@@ -99,23 +98,29 @@ def rip_wiki_content(url):
 
     try:
         response = requests.get(url, headers=headers)
+        # print(f"response.text: {response.text}")
         response.raise_for_status()  # Crashes nicely if link is dead (404)
     except Exception as e:
         print(f"❌ Error fetching page: {e}")
-        return None
+        return None, None
 
     soup = BeautifulSoup(response.text, "html.parser")
 
+    # print(f"soup.title: {soup.title.string if soup.title else 'No Title'}")
     # FINDING CONTENT
-    # On Fandom Wikis, the actual article is always inside <div class="mw-parser-output">.
+    # On Fandom and wikipedia, article usually inside <div class="mw-parser-output">.
     # ignore sidebars, ads, and footers.
     content_div = soup.find("div", {"class": "mw-parser-output"})
+    if not content_div:
+        # Fallback for weird Fandom layouts
+        print("    🟡 weird fandom layout. searching mw-content-text.")
+        content_div = soup.find("div", {"id": "mw-content-text"})
 
     if not content_div:
         print(
-            "❌ Could not find main content div. The Wiki structure might have changed."
+            "❌ Could not find main content div. Page structure is unknown, try uploading a wiki page."
         )
-        return None
+        return None, None
 
     # DATA CLEANING
     # We only want paragraphs <p>, lists <ul>, and headers <h>
@@ -125,13 +130,13 @@ def rip_wiki_content(url):
     current_header = "Introduction"
     current_idx = 0
 
-    tags_to_scrape = ["p", "h2", "h3", "h4", "ul"]  # add more later if needed
+    tags_to_scrape = ["p", "h1", "h2", "h3", "h4", "ul"]  # add more later if needed
 
     for element in content_div.find_all(tags_to_scrape, recursive=False):
         tag = element.name
-        text = element.get_text().strip()
+        text = element.get_text(" ", strip=True)
 
-        if not text:
+        if not text or len(text) < 3:
             continue
 
         # add header info in front of text
@@ -153,6 +158,10 @@ def rip_wiki_content(url):
     print(
         f"✅ Successfully extracted {len(clean_text)} characters of raw text and mapped {len(section_map)} sections."
     )
+
+    if not clean_text:
+        print("⚠️ Content div found but no extracted text")
+
     return clean_text, section_map
 
 
@@ -178,7 +187,7 @@ def chunk_text(raw_text, section_map, source_url, character_name, session_id):
         start_idx = raw_text.find(content, search_cursor)
         end_idx = start_idx + len(content)
 
-        # find dominant section for each chnuk
+        # find dominant section for each chunk
         if start_idx == -1:
             dominant_section = "Unknown"
         else:
@@ -295,7 +304,7 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
         return "❌ Failed to scrape content."
 
     if not raw_data:
-        return "❌ Failed to scrape content."
+        return "❌ Failed to scrape content, no data available"
 
     # run transformer
     final_chunks = chunk_text(raw_data, map_data, clean_url, character_name, session_id)

@@ -638,7 +638,7 @@ def bot_response(history, selected_char, session_id):
         fallback_msg = (
             "Please upload character data first."
             if not selected_char or selected_char == "No Character Selected"
-            else f"I, '{selected_char}', have no clue what you're talking about. Can you say that again?"
+            else f"I, {selected_char}, have no clue what you're talking about. Can you say that again?"
         )
         history.append({"role": "assistant", "content": fallback_msg})
         yield history
