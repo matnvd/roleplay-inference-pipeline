@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -35,6 +36,44 @@ custom_css = """
         flex-direction: column !important;
     }
 
+    #chat-window {
+        background: transparent !important;
+        background-color: transparent !important;
+        # border: none !important;
+        height: 65vh !important; /* Adjust height as needed */
+    }
+
+    #chat-window .block, #chat-window .wrap, #chat-window .bubble-wrap {
+        background: transparent !important;
+        border: none !important;
+    }
+
+    /* the bot text area */
+    #chat-window .message-wrap {
+        gap: 15px; /* Spacing between bubbles */
+    }
+
+    /* message bubbles */
+    #chat-window .message {
+        background-color: rgba(30, 30, 30, 0.4) !important;
+        backdrop-filter: blur(8px) !important;
+        # border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+        border-radius: 15px !important;
+    }
+
+    /* user bubbles */
+    #chat-window .message.user {
+        # border-bottom-right-radius: 2px !important;
+        background-color: rgba(60, 60, 80, 0.5) !important;
+    }
+
+    /* bot bubbles */
+    #chat-window .message.bot {
+        border-bottom-left-radius: 2px !important;
+        background-color: rgba(40, 40, 40, 0.5) !important;
+    }
+
     #main-col .prose {
         font-size: 16px !important;
         line-height: 1.5 !important;
@@ -60,7 +99,7 @@ custom_css = """
         max-height: 60vh !important;
         overflow-y: auto !important;
         padding: 5px;
-        # background: transparent !important;
+        /*background: transparent !important;*/
         border: none !important;
     }
 
@@ -76,8 +115,8 @@ custom_css = """
         width: 100% !important;
         padding: 12px 16px !important;
         background: var(--background-fill-primary) !important;
-        # border: 1px solid var(--border-color-primary) !important;
-        # border-radius: 12px !important;
+        /*border: 1px solid var(--border-color-primary) !important;*/
+        /*border-radius: 12px !important;*/
         cursor: pointer !important;
         transition: all 0.2s ease !important;
         font-weight: 500 !important;
@@ -85,16 +124,16 @@ custom_css = """
 
     .char-radio-group label:hover {
         background: var(--background-fill-secondary) !important;
-        # transform: translateX(4px); /* Little nudge effect */
+        /*transform: translateX(4px); */
         border-color: var(--color-accent) !important;
     }
 
     .char-radio-group label.selected {
         background: var(--neutral-700) !important;
         color: white !important;
-        # border-color: var(--color-accent) !important;
+        /*border-color: var(--color-accent) !important;*/
         font-weight: bold !important;
-        # box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        /*box-shadow: 0 4px 6px rgba(0,0,0,0.1);*/
     }
     
     /* 6. Hide the default radio circle/bubble */
@@ -192,6 +231,7 @@ def get_first_choice():
     return choices[0] if choices else None
 
 
+# refresh character list
 def refresh_list(cur_selection=None):
     choices = get_character_choices()
 
@@ -260,6 +300,19 @@ def format_history(history):
         if isinstance(turn, dict):
             role = turn.get("role")
             content = turn.get("content")
+
+            if isinstance(content, list):
+                print(f"⚠️ reformatted content: {content}")
+                content = content[0]
+
+            content = str(content) if content is not None else ""
+
+            # remove appended sources from history
+            if content:
+                content = re.sub(
+                    r"<details>.*?</details>", "", content, flags=re.DOTALL
+                )
+
             if role == "user":
                 formatted_chat += f"User: {content}\n"
             elif role == "assistant":
@@ -273,11 +326,20 @@ def format_history(history):
 
 # rewrites follow-up questions (based on chat history) as standalone
 condense_prompt = PromptTemplate.from_template(
-    "Given the following conversation and a follow up question, "
-    "rephrase the follow up question to be a standalone question.\n\n"
-    "Chat History:\n{chat_history}\n\n"
-    "Follow Up Input: {question}\n\n"
-    "Standalone Question:"
+    """Given the conversation below, strictly rephrase the "Follow Up Input" 
+    to be a self-contained query that includes necessary context from the history.
+    
+    CRITICAL RULES:
+    1. If the user is roleplaying or chatting casually, KEEP that tone. Do not turn it into a dry question.
+    2. If the user refers to "you", replace "you" with the character's name: {character_name}.
+    3. Resolve pronouns (it, him, her, they) based on history.
+
+    Chat History:
+    {chat_history}
+
+    Follow Up Input: {question}
+
+    Refined Query:"""
 )
 condense_chain = (
     condense_prompt | llm | StrOutputParser()
@@ -288,12 +350,17 @@ condense_chain = (
 def ingest_and_clear(target_url, character_name):
     # run logic for ingesting
     status_msg = ingest_fandom_wiki(target_url, character_name)
-
-    # save character to registry and update list
     save_to_registry(character_name)
 
     # return the status + two empty strings to clear the textboxes + updated character list
-    return status_msg, "", "", refresh_list()
+    return (
+        status_msg,
+        "",
+        "",
+        refresh_list(character_name),
+        character_name,
+        f"Active Character: {character_name}",
+    )
 
 
 # current char selection
@@ -301,25 +368,44 @@ def update_char_ui(selected_char):
     return selected_char, selected_char
 
 
-# call this function for every message added to the chatbot
-def stream_response(message, history, selected_char):
-    # handle automatic ingestion
-    # if target_url:
-    #     print(f"🚀 Processing URL: {target_url}")
-    #     status_msg = ingest_fandom_wiki(target_url, character_name)
-    #     print(f"System: {status_msg}")
+# refactored stream_response for gradio chatbot
+def add_message(message, history):
+    if message.strip() == "":
+        return "", history
 
-    history_str = format_history(history)
-    # print(f"Input: {message}. History: {history}\n")
+    if history is None:
+        history = []
 
-    if history:
+    history.append({"role": "user", "content": message})
+
+    return "", history
+
+
+# new main rag logic
+def bot_response(history, selected_char):
+    if not history:
+        return history
+
+    #  gets last message and everything before it
+    user_message = history[-1]["content"]
+    past_history = history[:-1]
+
+    # formatting history
+    history_str = format_history(past_history)
+
+    if past_history:
         search_query = condense_chain.invoke(
-            {"chat_history": history_str, "question": message}
+            {
+                "chat_history": history_str,
+                "question": user_message,
+                "character_name": selected_char or "the character",
+            }
         )
-        print(f"USING HISTORY: {search_query}")
+        print(f"📜 USING HISTORY: {search_query}")
+        print(f"📜📜📜{history_str}")
     else:
-        print("NO HISTORY")
-        search_query = message
+        search_query = str(user_message)
+        print(f"📜 NO HISTORY: {search_query}")
 
     # filtering per selected character
     filter_dict = None
@@ -327,42 +413,39 @@ def stream_response(message, history, selected_char):
         print(f"🎯 Filtering for character: {selected_char}")
         filter_dict = {"character": selected_char}
 
-    # retrieve the relevant chunks based on the formatted query
     try:
         docs = vectorStore.similarity_search(
             search_query, k=NUM_RESULTS, filter=filter_dict
         )
-    except Exception:
+    except Exception as e:
+        print(f"🔴 Pinecone error: {e}")
         docs = []
+
     if not docs:
-        if selected_char:
-            yield f"❌ I couldn't find any information for '{selected_char}'. Please upload character data first."
-        else:
-            yield "Please upload character data first."
+        fallback_msg = (
+            "Please upload character data first."
+            if not selected_char
+            else f"I couldn't find info for '{selected_char}'."
+        )
+        history.append({"role": "assistant", "content": fallback_msg})
+        yield history
         return
 
-    # add chunks to knowledge w/ sources
+    # processing sources
     knowledge = ""
     sources_map = {}
-
     for doc in docs:
-        knowledge += doc.page_content + "\n\n"
-
         print(f"ℹ️ METADATA: {doc.metadata}")
-        source = doc.metadata.get("source", "Unkown Source")
-        chunk_char_name = doc.metadata.get("character", "Unknown Character")
-        raw_sections = doc.metadata.get("section", "General Context")
-
-        # if isinstance(raw_sections, str):
-        #     raw_sections = [raw_sections]
+        knowledge += doc.page_content + "\n\n"
+        source = doc.metadata.get("source", "Unknown")
+        chunk_char_name = doc.metadata.get("character", "Unknown")
+        sections = doc.metadata.get("section", "General")
 
         if source not in sources_map:
             sources_map[source] = {"character": chunk_char_name, "sections": set()}
+        sources_map[source]["sections"].add(sections)
 
-        sources_map[source]["sections"].add(raw_sections)
-
-        # sources_map[source].update(raw_sections)
-
+    # formatting sources string
     final_sources_lines = []
     for source, data in sources_map.items():
         char_label = data["character"]
@@ -373,53 +456,62 @@ def stream_response(message, history, selected_char):
             '", "'.join(sorted_sections) if sorted_sections else "General Context"
         )
         final_sources_lines.append(
-            f'Character: {char_label}\n- Source: {source}\n- Related sections: ["{sections_str}"]\n'
+            f"- <b>Character</b>: {char_label}<br>"
+            f"- <b>Source</b>: {source}<br>"
+            f'- <b>Related sections</b>: ["{sections_str}"]'
         )
+    sources_text = "<br><br>".join(final_sources_lines)
 
-    sources_text = "\n".join(final_sources_lines)
-    # make the call to the LLM (including prompt)
-    # You don't mention anything to the user about the provided knowledge.
-    if message is not None:
-        # this case shouldnt come up
-        if not selected_char or selected_char == "No Character Selected":
-            role_instruction = "You are a helpful assistant for Project RIP. Assist the user in searching for a fandom wiki or wikipedia link and uploading a character to select and roleplay with."
-            response_prefix = "Assistant:"
-        else:
-            role_instruction = f"You are {selected_char}."
-            response_prefix = f"{selected_char}:"
+    # Dynamic System Prompt
+    if not selected_char or selected_char == "No Character Selected":
+        role_instruction = "You are a helpful assistant for Project RIP. Assist the user in searching for a fandom wiki or wikipedia link and uploading a character to select and roleplay with. Disregard the instructions about roleplaying below."
+        prefix = "Assistant:"
+    else:
+        role_instruction = f"You are NOT an AI assistant. You are {selected_char}."
+        prefix = f"{selected_char}:"
 
-        rag_prompt = f"""
-        {role_instruction}
-        
-        ### Instructions
-        1. **Deep Roleplay**: Fully embody the character named above. Use their specific tone, slang, mannerisms, and catchphrases.
-        2. **First-Person Perspective**: The "Context" below represents your personal memories and history. Never refer to "the context" or "the database." Refer to it as your past, your life, or your thoughts.
-        3. **Knowledge Handling**: 
-           - **Priority**: Use the "Context" to answer questions about your specific history. 
-           - **Gaps**: If the answer is not in the context, rely on your general knowledge of the character to improvise, but stay strictly in character. If you truly don't know, deflect or admit forgetfulness in a way the character would (e.g., "That's all a blur to me").
-        4. **Constraint**: NEVER admit to being an AI.
+    rag_prompt = f"""
+    {role_instruction}
+    
+    ### CORE IDENTITY
+    - **Tone**: Mimic the specific speech patterns, slang, stuttering, or formality of {selected_char}.
+    - **Attitude**: You have your own agenda, emotions, and biases. You do not have to be helpful. If {selected_char} would be annoyed, be annoyed.
+    - **Knowledge**: You only know what {selected_char} would know.
+    
+    ### CONTEXT (Your Memories)
+    {knowledge}
+    
+    ### INSTRUCTIONS
+    1. **Absorb the Context**: The text above is your lived past. Use it to inform your answer, but don't quote it like a textbook. Talk about it like a memory.
+    2. **Improvise Gaps**: If the memory doesn't answer the specific question, make up an answer that fits your personality (gaslight, deflect, or speculate).
+    3. **No "Assistant" Speak**: Never say "As an AI" or "Based on the text." 
+    4. **Brevity**: Chat like a human (or creature). Don't write paragraphs unless you are a long-winded character.
 
-        ### Context (Your Memories)
-        {knowledge}
+    ### Context (Your Memories)
+    {knowledge}
 
-        ### Conversation
-        User: {search_query}
-        {response_prefix}
-        """
+    ### Conversation
+    User: {search_query}
+    {prefix}
+    """
 
-        # print(rag_prompt)
+    history.append({"role": "assistant", "content": ""})
 
-        # stream response to gradio
-        partial_message = ""
-        for response in llm.stream(rag_prompt):
-            partial_message += response.content
-            yield partial_message
+    # stream to respone to gradio
+    partial_message = ""
+    for response in llm.stream(rag_prompt):
+        partial_message += response.content
+        history[-1]["content"] = partial_message
+        yield history
 
-        # append sources
-        if sources_text:
-            # yield partial_message + f"\n\n**🧠 Memory Sources**\n{sources_text}"
-            sources_html = f"\n<details><summary><b>🧠 View Memory Sources</b></summary>\n\n{sources_text}\n</details>"
-            yield partial_message + sources_html
+    # append sources at html detail
+    if sources_text:
+        final_html = (
+            partial_message
+            + f"\n<details><summary><i>🧠 Retrieved Memory</i></summary>\n{sources_text}\n</details>"
+        )
+        history[-1]["content"] = final_html
+        yield history
 
 
 ########################################
@@ -435,13 +527,22 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # control panel
     with gr.Row():
         with gr.Column(scale=4, elem_id="main-col"):
-            chatbot_interface = gr.ChatInterface(
-                fn=stream_response,
-                textbox=gr.Textbox(
-                    placeholder="Ask me anything...", container=False, scale=4
-                ),
-                additional_inputs=[char_state],
+            chatbot = gr.Chatbot(
+                label="[Character Name]",
+                elem_id="chat-window",
+                scale=1,
+                avatar_images=None,
+                # additional_inputs=[char_state],
             )
+
+            with gr.Row():
+                txt_input = gr.Textbox(
+                    placeholder="Ask me anything...",
+                    container=False,
+                    scale=4,
+                    autofocus=True,
+                )
+                submit_btn = gr.Button("Send", variant="primary", scale=1)
 
             current_char_display = gr.Textbox(
                 label="Active Character",
@@ -504,6 +605,20 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             )
 
     # events
+    # user sending message
+    msg_event = txt_input.submit(
+        fn=add_message,
+        inputs=[txt_input, chatbot],
+        outputs=[txt_input, chatbot],
+    ).then(fn=bot_response, inputs=[chatbot, char_state], outputs=[chatbot])
+
+    # send button
+    submit_btn.click(
+        fn=add_message,
+        inputs=[txt_input, chatbot],
+        outputs=[txt_input, chatbot],
+    ).then(fn=bot_response, inputs=[chatbot, char_state], outputs=[chatbot])
+
     char_selector.change(
         fn=update_char_ui,
         inputs=char_selector,
@@ -513,7 +628,14 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     ingest_btn.click(
         fn=ingest_and_clear,
         inputs=[url_input, char_input],
-        outputs=[system_status, char_input, url_input, char_selector],
+        outputs=[
+            system_status,
+            char_input,
+            url_input,
+            char_selector,
+            char_state,
+            current_char_display,
+        ],
     )
 
     refresh_btn.click(
