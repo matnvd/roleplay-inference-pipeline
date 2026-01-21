@@ -296,6 +296,11 @@ def ingest_and_clear(target_url, character_name):
     return status_msg, "", "", refresh_list()
 
 
+# current char selection
+def update_char_ui(selected_char):
+    return selected_char, selected_char
+
+
 # call this function for every message added to the chatbot
 def stream_response(message, history, selected_char):
     # handle automatic ingestion
@@ -423,6 +428,15 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 ),
                 additional_inputs=[char_state],
             )
+
+            current_char_display = gr.Textbox(
+                label="Active Character",
+                value="No Character Available",
+                interactive=False,
+                lines=1,
+                # max_lines=1,
+                elem_id="active-char-box",
+            )
         with gr.Column(scale=1):
             with gr.Tabs(elem_classes=["expand-tabs"]):
                 # tab 1: initial uploading character section
@@ -476,7 +490,11 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             )
 
     # events
-    char_selector.change(fn=lambda x: x, inputs=char_selector, outputs=char_state)
+    char_selector.change(
+        fn=update_char_ui,
+        inputs=char_selector,
+        outputs=[char_state, current_char_display],
+    )
 
     ingest_btn.click(
         fn=ingest_and_clear,
