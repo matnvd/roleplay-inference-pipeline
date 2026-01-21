@@ -24,7 +24,7 @@ custom_css = """
 /* desktop rules */
 
 @media (min-width: 768px) {
-    /* FILL VIEWPORT HIEGHT (for main gradio container) */
+    /* CHAT WINDOW STYLING */
     .gradio-container {
         height: 100vh !important;
     }
@@ -77,6 +77,21 @@ custom_css = """
     #main-col .prose {
         font-size: 16px !important;
         line-height: 1.5 !important;
+    }
+
+    /* INPUT ROW STYLING */
+    #input-row {
+        align-items: stretch !important;
+        gap: 8px !important;
+    }
+    
+    #send-btn {
+        height: 100% !important;
+        margin: 0 !important;
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
 
     /*TAB EXPANSION (need to adjust, not working properly entirely)*/
@@ -541,14 +556,21 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 # additional_inputs=[char_state],
             )
 
-            with gr.Row():
+            with gr.Row(elem_id="input-row"):
                 txt_input = gr.Textbox(
                     placeholder="Ask me anything...",
                     container=False,
-                    scale=4,
+                    scale=8,
                     autofocus=True,
                 )
-                submit_btn = gr.Button("Send", variant="primary", scale=1)
+                submit_btn = gr.Button(
+                    value="",
+                    # This URL points to the exact SVG version of the Google Material 'Send' icon
+                    icon="https://api.iconify.design/material-symbols:send-rounded.svg?color=%23ffffff",
+                    variant="primary",
+                    scale=0,
+                    min_width=50,
+                )
 
             current_char_display = gr.Textbox(
                 label="Active Character",
