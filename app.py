@@ -354,18 +354,20 @@ def ingest_and_clear(target_url, character_name):
 
     # return the status + two empty strings to clear the textboxes + updated character list
     return (
-        status_msg,
-        "",
-        "",
-        refresh_list(character_name),
-        character_name,
-        f"Active Character: {character_name}",
+        status_msg,  # system status
+        "",  # clear char_input
+        "",  # clear url_input
+        refresh_list(character_name),  # refresh list
+        character_name,  # update char_state
+        f"Active Character: {character_name}",  # update current char display
+        gr.Chatbot(label=character_name),  # update chatbot label
     )
 
 
 # current char selection
 def update_char_ui(selected_char):
-    return selected_char, selected_char
+    new_label = selected_char if selected_char else "No character selected"
+    return (selected_char, f"{new_label}", gr.Chatbot(value=[], label=new_label))
 
 
 # refactored stream_response for gradio chatbot
@@ -401,16 +403,17 @@ def bot_response(history, selected_char):
                 "character_name": selected_char or "the character",
             }
         )
-        print(f"📜 USING HISTORY: {search_query}")
+        print("\n📜 USING HISTORY:")
         print(f"📜📜📜{history_str}")
+        print(f"🔍 new query: {search_query}")
     else:
         search_query = str(user_message)
-        print(f"📜 NO HISTORY: {search_query}")
+        print(f"\n🔍 NO HISTORY: {search_query}")
 
     # filtering per selected character
     filter_dict = None
     if selected_char and selected_char != "No Character Selected":
-        print(f"🎯 Filtering for character: {selected_char}")
+        print(f"\n🎯 Filtering for character: {selected_char}")
         filter_dict = {"character": selected_char}
 
     try:
@@ -528,7 +531,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     with gr.Row():
         with gr.Column(scale=4, elem_id="main-col"):
             chatbot = gr.Chatbot(
-                label="[Character Name]",
+                label="No Character Selected",
                 elem_id="chat-window",
                 scale=1,
                 avatar_images=None,
@@ -622,7 +625,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     char_selector.change(
         fn=update_char_ui,
         inputs=char_selector,
-        outputs=[char_state, current_char_display],
+        outputs=[char_state, current_char_display, chatbot],
     )
 
     ingest_btn.click(
@@ -635,6 +638,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             char_selector,
             char_state,
             current_char_display,
+            chatbot,
         ],
     )
 
