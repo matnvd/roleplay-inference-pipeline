@@ -174,7 +174,7 @@ custom_css = """
     }
 
     .status-box textarea {
-        height: 250px !important;
+        height: 85px !important;
         overflow-y: scroll !important;
     }
 }

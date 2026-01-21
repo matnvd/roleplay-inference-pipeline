@@ -11,6 +11,7 @@ load_dotenv()
 # Configuration
 INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
+GLOBAL_SESSION_ID = "demo_roster"
 
 
 def main():
@@ -37,11 +38,12 @@ def main():
     # 2. Menu Options
     print("What would you like to do?")
     print("1. 🗑️ Delete a specific Source URL")
-    print("2. ☢️ NUKE IT (Delete ALL data)")
+    print("2. 🌎☢️🌎 NUKE IT (Delete ALL data)")
     print("3. 👦 Delete a specific character")
+    print("4. ☢️ Nuke all-known global characters")
     print("x. ❌ Exit")
 
-    choice = input("\nEnter choice (1, 2, 3, or x): ").strip()
+    choice = input("\nEnter choice (1-4, or x): ").strip()
 
     # --- OPTION 1: DELETE SPECIFIC URL ---
     if choice == "1":
@@ -106,6 +108,51 @@ def main():
 
         except Exception as e:
             print(f"❌ Error deleting data: {e}")
+
+    # delete non-global characters
+    elif choice == "4":
+        dummy_vector = [0.0] * 1536
+
+        # Fetch a large number of matches to find various session IDs
+        # Note: If you have >10k vectors, you might need to run this multiple times or use pagination
+        results = index.query(vector=dummy_vector, top_k=10000, include_metadata=True)
+
+        # 3. Identify Session IDs to Delete
+        sessions_to_delete = set()
+
+        for match in results["matches"]:
+            if "metadata" in match:
+                sid = match["metadata"].get("session_id")
+                # If the session ID exists AND it is NOT the global one
+                if sid and sid != GLOBAL_SESSION_ID:
+                    sessions_to_delete.add(sid)
+
+        if not sessions_to_delete:
+            print("✅ No temporary sessions found. Database is clean!")
+            return
+
+        print(
+            f"⚠️ Found {len(sessions_to_delete)} temporary sessions to delete: {sessions_to_delete}"
+        )
+        confirm = input("Type 'DELETE' to confirm wiping these sessions: ")
+
+        if confirm != "DELETE":
+            print("❌ Operation cancelled.")
+            return
+
+        # 4. Delete loop
+        for sid in sessions_to_delete:
+            print(f"🔥 Deleting session: {sid}...")
+            try:
+                index.delete(filter={"session_id": sid})
+            except Exception as e:
+                print(f"    ❌ Error deleting {sid}: {e}")
+
+        # 5. Verify
+        time.sleep(5)
+        final_stats = index.describe_index_stats()
+        print("\n✨ Cleanup Complete.")
+        print(f"📊 New Vector Count: {final_stats.total_vector_count}")
 
     # --- OPTION 3: EXIT ---
     else:
