@@ -12,7 +12,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone
 
-from ingest import ingest_fandom_wiki, send_traffic_notification
+from ingest import ingest_fandom_wiki
+from notifier import send_traffic_notification
 
 load_dotenv()
 INDEX_NAME = "project-rip"
