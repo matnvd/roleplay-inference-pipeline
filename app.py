@@ -243,7 +243,6 @@ def refresh_list(cur_selection=None):
         new_val = None
 
     if choices:
-        default_val = choices[0]
         return gr.Radio(choices=choices, value=new_val, interactive=True)
     else:
         return gr.Radio(
@@ -278,10 +277,14 @@ def resync_characters_scan():
         new_choices = sorted(list(unique_chars))
         default_val = new_choices[0] if new_choices else None
 
+        print(f"👦 new char list: {unique_chars}")
+
         # return new list + status update
-        return format_char_list(
-            unique_chars
-        ), f"✅ Resync Complete. Found {len(unique_chars)} characters."
+        return (
+            gr.Radio(choices=new_choices, value=default_val, interactive=True),
+            f"✅ Resync Complete. Found {len(unique_chars)} characters.",
+            default_val,
+        )
 
     except Exception as e:
         return f"⚠️ Error during resync: {str(e)}"
@@ -643,7 +646,9 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     )
 
     refresh_btn.click(
-        fn=resync_characters_scan, inputs=None, outputs=[char_selector, system_status]
+        fn=resync_characters_scan,
+        inputs=None,
+        outputs=[char_selector, system_status, char_state],
     )
 
     # makes sure to get character list every time its clicked

@@ -36,11 +36,12 @@ def main():
 
     # 2. Menu Options
     print("What would you like to do?")
-    print("1. 🗑️  Delete a specific Source URL")
-    print("2. ☢️  NUKE IT (Delete ALL data)")
+    print("1. 🗑️ Delete a specific Source URL")
+    print("2. ☢️ NUKE IT (Delete ALL data)")
+    print("3. 👦 Delete a specific character")
     print("x. ❌ Exit")
 
-    choice = input("\nEnter choice (1, 2, or x): ").strip()
+    choice = input("\nEnter choice (1, 2, 3, or x): ").strip()
 
     # --- OPTION 1: DELETE SPECIFIC URL ---
     if choice == "1":
@@ -85,6 +86,26 @@ def main():
                 print(f"❌ Error clearing index: {e}")
         else:
             print("🚫 Confirmation failed. Operation cancelled.")
+
+    # filter by character
+    elif choice == "3":
+        target_char = input("\nEnter the full character name to remove: ").strip()
+
+        print(
+            f"\n🔍 Deleting vectors where metadata['character'] == '{target_char}'..."
+        )
+        try:
+            # The Magic Line: Deletes only vectors matching the filter
+            index.delete(filter={"character": target_char})
+            print(f"✅ Success! All chunks from '{target_char}' have been removed.")
+
+            # Verify update
+            time.sleep(2)  # Give Pinecone a moment to update stats
+            new_stats = index.describe_index_stats()
+            print(f"📊 New Total Vector Count: {new_stats.total_vector_count}")
+
+        except Exception as e:
+            print(f"❌ Error deleting data: {e}")
 
     # --- OPTION 3: EXIT ---
     else:
