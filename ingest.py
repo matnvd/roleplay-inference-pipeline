@@ -1,3 +1,4 @@
+import os
 from urllib.parse import urlparse, urlunparse
 
 import requests
@@ -16,6 +17,41 @@ load_dotenv()
 # TARGET_URL = "https://arcane.fandom.com/wiki/Jinx"
 # TARGET_URL = "https://how-i-met-your-mother.fandom.com/wiki/Barney_Stinson"
 INDEX_NAME = "project-rip"
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
+
+# for notifying pinecone db updates to avoid overusage
+def send_discord_notification(character_name, source_url, session_id):
+    if not DISCORD_WEBHOOK_URL:
+        print("⚠️ No Discord Webhook URL found in .env, skipping notification.")
+        return
+
+    payload = {
+        "username": "Project RIP Ingestion Bot",
+        # "avatar_url": "https://cdn-icons-png.flaticon.com/512/2040/2040504.png",
+        "embeds": [
+            {
+                "title": "🚀 New Character Uploaded!",
+                "color": 5763719,  # Green color code
+                "fields": [
+                    {"name": "🎭 Character", "value": character_name, "inline": True},
+                    {
+                        "name": "🔗 Source",
+                        "value": f"[Wiki Link]({source_url})",
+                        "inline": True,
+                    },
+                    {"name": "# Session_ID", "value": session_id, "inline": True},
+                ],
+                "footer": {"text": "Project RIP Vector Database"},
+            }
+        ],
+    }
+
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        print("🔔 Discord notification sent!")
+    except Exception as e:
+        print(f"❌ Failed to send Discord notification: {e}")
 
 
 # CONTENT COLLECTION
@@ -240,5 +276,7 @@ def ingest_fandom_wiki(url, character_name, session_id):
     print("----------------------\n")
 
     ingest_to_pinecone(final_chunks)
+
+    send_discord_notification(character_name, clean_url, session_id)
 
     return f"✅ Successfully ingested: {clean_url} for '{character_name}'"
