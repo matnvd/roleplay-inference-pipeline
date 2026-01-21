@@ -323,7 +323,7 @@ def stream_response(message, history, selected_char):
 
     # filtering per selected character
     filter_dict = None
-    if selected_char and selected_char != "All Characters":
+    if selected_char and selected_char != "No Character Selected":
         print(f"🎯 Filtering for character: {selected_char}")
         filter_dict = {"character": selected_char}
 
@@ -380,19 +380,31 @@ def stream_response(message, history, selected_char):
     # make the call to the LLM (including prompt)
     # You don't mention anything to the user about the provided knowledge.
     if message is not None:
-        rag_prompt = f"""
-        You are an assistent for Project RIP.
-        
-        Instructions:
-        1. Priority: Check the "Context" below for the answer.
-        2. If the answer is in the context, answer strictly based on that, and don't mention any previously given context.
-        3. Fallback: If the answer is not in the context, ignore the context completely and answer using your own general knowledge.
-        4. Disclaimer: If you use your own knowledge, start the answer with: "I couldn't find exact details in the database, but..."
+        # this case shouldnt come up
+        if not selected_char or selected_char == "No Character Selected":
+            role_instruction = "You are a helpful assistant for Project RIP. Assist the user in searching for a fandom wiki or wikipedia link and uploading a character to select and roleplay with."
+            response_prefix = "Assistant:"
+        else:
+            role_instruction = f"You are {selected_char}."
+            response_prefix = f"{selected_char}:"
 
-        Context:
+        rag_prompt = f"""
+        {role_instruction}
+        
+        ### Instructions
+        1. **Deep Roleplay**: Fully embody the character named above. Use their specific tone, slang, mannerisms, and catchphrases.
+        2. **First-Person Perspective**: The "Context" below represents your personal memories and history. Never refer to "the context" or "the database." Refer to it as your past, your life, or your thoughts.
+        3. **Knowledge Handling**: 
+           - **Priority**: Use the "Context" to answer questions about your specific history. 
+           - **Gaps**: If the answer is not in the context, rely on your general knowledge of the character to improvise, but stay strictly in character. If you truly don't know, deflect or admit forgetfulness in a way the character would (e.g., "That's all a blur to me").
+        4. **Constraint**: NEVER admit to being an AI.
+
+        ### Context (Your Memories)
         {knowledge}
 
-        Question: {search_query}
+        ### Conversation
+        User: {search_query}
+        {response_prefix}
         """
 
         # print(rag_prompt)
@@ -405,7 +417,9 @@ def stream_response(message, history, selected_char):
 
         # append sources
         if sources_text:
-            yield partial_message + f"\n\n**Context**\n{sources_text}"
+            # yield partial_message + f"\n\n**🧠 Memory Sources**\n{sources_text}"
+            sources_html = f"\n<details><summary><b>🧠 View Memory Sources</b></summary>\n\n{sources_text}\n</details>"
+            yield partial_message + sources_html
 
 
 ########################################
@@ -416,7 +430,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
 
     # cur char
-    char_state = gr.State("All Characters")
+    char_state = gr.State("No Character Selected")
 
     # control panel
     with gr.Row():
