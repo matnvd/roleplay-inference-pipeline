@@ -27,8 +27,17 @@ NUM_RESULTS = 8  # increase if want more chunks
 ACCESS_CODES = {
     os.getenv("ADMIN_PASSWORD"): "Admin",
     os.getenv("RESUME_PASSWORD"): "Resume",
-    os.getenv("FAMILY_FRIENDS_PASSWORD"): "Family_Friends",
+    os.getenv("FRIENDS_PASSWORD"): "Friends",
+    os.getenv("FAMILY_PASSWORD"): "Family",
     os.getenv("PASSWORD1"): "Source1",
+    os.getenv("PASSWORD2"): "Source2",
+    os.getenv("PASSWORD3"): "Source3",
+    os.getenv("PASSWORD4"): "Source4",
+    os.getenv("PASSWORD5"): "Source5",
+    os.getenv("PASSWORD6"): "Source6",
+    os.getenv("PASSWORD7"): "Source7",
+    os.getenv("PASSWORD8"): "Source8",
+    os.getenv("PASSWORD9"): "Source9",
 }
 
 embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")

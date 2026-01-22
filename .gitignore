@@ -9,3 +9,4 @@ self_notes.txt
 requirements.txt
 test
 .DS_Store
+*.lss
