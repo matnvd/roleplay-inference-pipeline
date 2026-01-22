@@ -520,7 +520,10 @@ def ingest_and_clear(
     session_history,
     global_chars,
     traffic_source,
+    last_char,
     image_map,
+    history_map,
+    current_chat_history,
 ):
     # security check
     if not traffic_source or traffic_source == "Unknown":
@@ -535,8 +538,10 @@ def ingest_and_clear(
             "No Character Selected",
             "Active Character: None",
             gr.update(),
+            last_char,
             session_history,
             image_map,
+            history_map,
         )
 
     if "wikipedia.org" not in target_url and "fandom.com" not in target_url:
@@ -548,8 +553,14 @@ def ingest_and_clear(
             gr.update(),
             gr.update(),
             gr.update(),
+            last_char,  # is this correct?
             session_history,
+            image_map,
+            history_map,
         )
+
+    if last_char and last_char != "No Character Selected":
+        history_map[last_char] = current_chat_history
 
     # run logic for ingesting
     status_msg, img_url = ingest_fandom_wiki(
@@ -565,8 +576,9 @@ def ingest_and_clear(
         if img_url:
             image_map[character_name] = img_url
 
-    new_radio = update_radio_list(global_chars, session_history, character_name)
+        history_map[character_name] = []
 
+    new_radio = update_radio_list(global_chars, session_history, character_name)
     new_avatar = image_map.get(character_name, None)
 
     # return the status + two empty strings to clear the textboxes + updated character list
@@ -582,17 +594,41 @@ def ingest_and_clear(
         ),  # update chatbot label
         session_history,  # updated list
         image_map,
+        history_map,
     )
 
 
-# current char selection
-def update_char_ui(selected_char, image_map):
-    new_label = selected_char if selected_char else "No character selected"
-    avatar_url = image_map.get(selected_char, None)
+# current char selection, saving old character data before loading new one
+def save_and_switch_character(
+    new_selection, old_selection, current_history, history_map, image_map
+):
+    if new_selection == old_selection:
+        return (
+            old_selection,
+            f"Active Character: {old_selection}",
+            gr.update(),
+            history_map,
+        )
+
+    # store chat history before leaving
+    if old_selection and old_selection != "No Character Selected":
+        history_map[old_selection] = current_history
+
+    # retrieve history
+    new_history = history_map.get(new_selection, [])
+
+    # load image
+    avatar_url = image_map.get(new_selection, None)
+
+    new_label = new_selection if new_selection else "No Character Selected"
+
     return (
-        selected_char,
-        f"{new_label}",
-        gr.Chatbot(value=[], label=new_label, avatar_images=(None, avatar_url)),
+        new_selection,  # New char_state
+        f"Active Character: {new_label}",  # New text display
+        gr.Chatbot(  # New chatbot state
+            value=new_history, label=new_label, avatar_images=(None, avatar_url)
+        ),
+        history_map,  # Updated map
     )
 
 
@@ -792,10 +828,14 @@ def bot_response(history, selected_char, session_id, temperature):
         yield history
 
 
-def trigger_greeting(selected_char, session_id, temperature):
+def trigger_greeting(selected_char, session_id, temperature, history):
+    if history and len(history) > 0:
+        yield history
+        return
     # Skip if no character is selected
     if not selected_char or selected_char == "No Character Selected":
-        return []
+        yield history
+        return
 
     print(f"👋 Triggering greeting for: {selected_char}")
 
@@ -869,6 +909,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # stores cur selection
     char_state = gr.State("No Character Selected")
     char_images_state = gr.State({})
+    chat_history_map = gr.State({})
 
     # custom login screen (instead of default auth)
     with gr.Column(elem_id="login-screen", visible=True) as login_col:
@@ -1064,12 +1105,18 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     )
 
     char_selector.change(
-        fn=update_char_ui,
-        inputs=[char_selector, char_images_state],
-        outputs=[char_state, current_char_display, chatbot],
+        fn=save_and_switch_character,
+        inputs=[
+            char_selector,
+            char_state,
+            chatbot,
+            chat_history_map,
+            char_images_state,
+        ],
+        outputs=[char_state, current_char_display, chatbot, chat_history_map],
     ).then(
         fn=trigger_greeting,
-        inputs=[char_state, session_state, temp_slider],
+        inputs=[char_state, session_state, temp_slider, chatbot],
         outputs=[chatbot],
     )
 
@@ -1086,7 +1133,10 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_char_history,
             global_char_state,
             traffic_source_state,
+            char_state,
             char_images_state,
+            chat_history_map,
+            chatbot,
         ],
         outputs=[
             system_status,
@@ -1098,6 +1148,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             chatbot,
             session_char_history,
             char_images_state,
+            chat_history_map,
         ],
     ).then(None, None, None, js=js_focus)
 
@@ -1124,7 +1175,10 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_char_history,
             global_char_state,
             traffic_source_state,
+            char_state,
             char_images_state,
+            chat_history_map,
+            chatbot,
         ],
         outputs=[
             system_status,
@@ -1136,6 +1190,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             chatbot,
             session_char_history,
             char_images_state,
+            chat_history_map,
         ],
     ).then(None, None, None, js=js_focus)
 
