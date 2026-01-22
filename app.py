@@ -130,6 +130,15 @@ custom_css = """
         gap: 15px; /* Spacing between bubbles */
     }
 
+    /* --- REMOVE AVATAR BORDERS --- */
+    #chat-window .avatar-container img {
+        border: none !important;
+        border-width: 0 !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+        padding: 0px !important
+    }
+
     /* message bubbles */
     #chat-window .message {
         # background-color: rgba(30, 30, 30, 0.4) !important;
@@ -484,6 +493,25 @@ condense_prompt = PromptTemplate.from_template(
 condense_chain = condense_prompt | llm | StrOutputParser()
 
 
+# clears chats to prevent previous character "typing"
+def start_ingest(char_name):
+    """
+    Clears the chat and sets the status immediately so the user
+    doesn't see the previous character 'typing' while we scrape.
+    """
+    temp_label = f"Connecting you to {char_name or 'Unknown'}..."
+
+    # Return:
+    # 1. System Status Update
+    # 2. Chatbot (Value cleared, Label updated to 'Loading...')
+    # 3. Char Display
+    return (
+        "⏳ Connecting to Wiki...",
+        gr.Chatbot(value=[], label=temp_label, avatar_images=None),
+        "Status: Uploading...",
+    )
+
+
 # clear input fields (wrapper for ingest_fandom_wiki)
 def ingest_and_clear(
     target_url,
@@ -492,7 +520,7 @@ def ingest_and_clear(
     session_history,
     global_chars,
     traffic_source,
-    last_char,
+    image_map,
 ):
     # security check
     if not traffic_source or traffic_source == "Unknown":
@@ -508,6 +536,7 @@ def ingest_and_clear(
             "Active Character: None",
             gr.update(),
             session_history,
+            image_map,
         )
 
     if "wikipedia.org" not in target_url and "fandom.com" not in target_url:
@@ -523,7 +552,7 @@ def ingest_and_clear(
         )
 
     # run logic for ingesting
-    status_msg = ingest_fandom_wiki(
+    status_msg, img_url = ingest_fandom_wiki(
         target_url, character_name, session_id, traffic_source
     )
     # save_to_registry(character_name)
@@ -533,7 +562,12 @@ def ingest_and_clear(
         if character_name not in session_history:
             session_history.append(character_name)
 
+        if img_url:
+            image_map[character_name] = img_url
+
     new_radio = update_radio_list(global_chars, session_history, character_name)
+
+    new_avatar = image_map.get(character_name, None)
 
     # return the status + two empty strings to clear the textboxes + updated character list
     return (
@@ -543,15 +577,23 @@ def ingest_and_clear(
         new_radio,  # refresh list
         character_name,  # update char_state
         f"Active Character: {character_name}",  # update current char display
-        gr.Chatbot(label=character_name),  # update chatbot label
+        gr.Chatbot(
+            value=[], label=character_name, avatar_images=(None, new_avatar)
+        ),  # update chatbot label
         session_history,  # updated list
+        image_map,
     )
 
 
 # current char selection
-def update_char_ui(selected_char):
+def update_char_ui(selected_char, image_map):
     new_label = selected_char if selected_char else "No character selected"
-    return (selected_char, f"{new_label}", gr.Chatbot(value=[], label=new_label))
+    avatar_url = image_map.get(selected_char, None)
+    return (
+        selected_char,
+        f"{new_label}",
+        gr.Chatbot(value=[], label=new_label, avatar_images=(None, avatar_url)),
+    )
 
 
 # refactored stream_response for gradio chatbot
@@ -826,6 +868,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
     # stores cur selection
     char_state = gr.State("No Character Selected")
+    char_images_state = gr.State({})
 
     # custom login screen (instead of default auth)
     with gr.Column(elem_id="login-screen", visible=True) as login_col:
@@ -1022,7 +1065,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
     char_selector.change(
         fn=update_char_ui,
-        inputs=char_selector,
+        inputs=[char_selector, char_images_state],
         outputs=[char_state, current_char_display, chatbot],
     ).then(
         fn=trigger_greeting,
@@ -1031,6 +1074,10 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     )
 
     ingest_btn.click(
+        fn=start_ingest,
+        inputs=[char_input],
+        outputs=[system_status, chatbot, current_char_display],
+    ).then(
         fn=ingest_and_clear,
         inputs=[
             url_input,
@@ -1039,7 +1086,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_char_history,
             global_char_state,
             traffic_source_state,
-            char_state,
+            char_images_state,
         ],
         outputs=[
             system_status,
@@ -1050,6 +1097,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             current_char_display,
             chatbot,
             session_char_history,
+            char_images_state,
         ],
     ).then(None, None, None, js=js_focus)
 
@@ -1064,6 +1112,10 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     )
 
     url_input.submit(
+        fn=start_ingest,
+        inputs=[char_input],
+        outputs=[system_status, chatbot, current_char_display],
+    ).then(
         fn=ingest_and_clear,
         inputs=[
             url_input,
@@ -1072,6 +1124,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_char_history,
             global_char_state,
             traffic_source_state,
+            char_images_state,
         ],
         outputs=[
             system_status,
@@ -1082,6 +1135,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             current_char_display,
             chatbot,
             session_char_history,
+            char_images_state,
         ],
     ).then(None, None, None, js=js_focus)
 

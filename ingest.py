@@ -37,30 +37,12 @@ def rip_wiki_content(url):
 
             print(f"    📖 Detected Wikipedia API. Fetching '{page_title}' ({lang})...")
 
-            # user_agent = "ProjectRip/1.0 (mathiasnvd07@gmail.com)"
-
-            # wiki = wikipediaapi.Wikipedia(
-            #     user_agent=user_agent,
-            #     language=lang,
-            #     extract_format=wikipediaapi.ExtractFormat.HTML,
-            # )
-
-            # page = wiki.page(page_title)
-
-            # if not page.exists():
-            #     print("❌ Page does not exist.")
-            #     return None, None
-
-            # # .text returns HTML because we set extract_format=HTML above
-            # html_content = page.text
-
-            # We use action=parse because it returns the FULL HTML (tables included)
             api_url = f"https://{lang}.wikipedia.org/w/api.php"
             params = {
                 "action": "parse",
                 "page": page_title,
                 "format": "json",
-                "prop": "text",  # 'text' keeps the HTML tables; 'extracts' removes them
+                "prop": "text",
                 "redirects": 1,
                 "disabletoc": 1,
             }
@@ -103,14 +85,21 @@ def rip_wiki_content(url):
 
     soup = BeautifulSoup(html_content, "html.parser")
     # print(f"soup.text: {soup.text}")
-    infobox_text = extract_infobox(soup)
+    infobox_text, image_url = extract_infobox(soup)
+
+    if image_url:
+        print(f"🖼️  Successfully scraped image: {image_url}")
+    else:
+        print("⚠️ No profile image found in infobox.")
 
     # print(f"soup.title: {soup.title.string if soup.title else 'No Title'}")
+
     # FINDING CONTENT
     # On Fandom Wikis, article usually inside <div class="mw-parser-output">.
     # ignore sidebars, ads, and footers.
     content_div = soup.find("div", {"class": "mw-parser-output"})
 
+    # text extraction
     if not content_div and "wikipedia.org" in url:
         content_div = soup
 
@@ -209,7 +198,7 @@ def rip_wiki_content(url):
     if not clean_text:
         print("⚠️ Content div found but no extracted text")
 
-    return clean_text, section_map
+    return clean_text, section_map, image_url
 
 
 # extracting infobox basics for wiki links
@@ -222,6 +211,34 @@ def extract_infobox(soup):
         infobox = soup.find("aside", {"class": "portable-infobox"})
 
     if infobox:
+        # --- IMAGE EXTRACTION ---
+
+        img_tag = infobox.find("img", {"class": "mw-file-element"})
+
+        if not img_tag:
+            img_tag = infobox.find("img", {"class": "pi-image-thumbnail"})
+
+        if not img_tag:
+            wrapper = infobox.find(class_=["infobox-image", "view-image"])
+            if wrapper:
+                img_tag = wrapper.find("img")
+
+        if not img_tag:
+            img_tag = infobox.find("img")
+
+        # Extract & Clean URL
+        if img_tag and img_tag.get("src"):
+            raw_src = img_tag["src"]
+
+            if raw_src.startswith("//"):
+                raw_src = "https:" + raw_src
+
+            if "/revision/" in raw_src:
+                raw_src = raw_src.split("/revision/")[0]
+
+            image_url = raw_src
+
+        # TEXT EXTRACTION
         infobox_text += "== QUICK FACTS (Infobox) ==\n"
 
         # WIKIPEDIA STYLE (Rows with th/td)
@@ -260,7 +277,7 @@ def extract_infobox(soup):
         # 2. Decompose (delete) the infobox from soup so the main loop doesn't scrape it again
         infobox.decompose()
 
-    return infobox_text
+    return infobox_text, image_url
 
 
 # CHUNKING
@@ -397,7 +414,7 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
 
     # run extractor
     try:
-        raw_data, map_data = rip_wiki_content(clean_url)
+        raw_data, map_data, image_url = rip_wiki_content(clean_url)
     except Exception:
         return "❌ Failed to scrape content."
 
@@ -423,4 +440,5 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
     else:
         print("🔔 skipped upload notification")
 
-    return f"✅ Successfully ingested: {clean_url} for '{character_name}'"
+    print(f"📸 img_url: {image_url}")
+    return f"✅ Successfully ingested: {clean_url} for '{character_name}'", image_url
