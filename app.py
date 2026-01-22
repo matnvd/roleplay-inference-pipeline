@@ -256,30 +256,16 @@ custom_css = """
         overflow-y: scroll !important;
     }
 
-    /*Light mode overrides*/
-    # body:not(.dark) #chat-window .message {
-    #     background-color: #ffffff !important; /* White background */
-    #     border: 1px solid #e5e7eb !important; /* Subtle grey border */
-    #     color: #1f2937 !important; /* Dark grey text (almost black) */
-    #     box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; /* Lighter shadow */
-    # }
+    /* Hide arrows/spinners in number inputs (Slider) */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none !important; 
+        margin: 0 !important; 
+    }
 
-    # /* Light Mode User Bubble */
-    # body:not(.dark) #chat-window .message.user {
-    #     background-color: #f3f4f6 !important; /* Light Grey/Blue */
-    #     border-bottom-right-radius: 2px !important;
-    # }
-
-    # /* Light Mode Bot Bubble */
-    # body:not(.dark) #chat-window .message.bot {
-    #     background-color: #ffffff !important; /* Pure White */
-    #     border-bottom-left-radius: 2px !important;
-    # }
-    
-    # /* Ensure markdown links/code in light mode are readable */
-    # body:not(.dark) #chat-window .message p {
-    #     color: #1f2937 !important;
-    # }
+    input[type=number] {
+        -moz-appearance: textfield !important;
+    }
 }
 
 /* mobile rules (screens smaller than 768px) */
@@ -294,7 +280,7 @@ custom_css = """
 embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
 
 # upgrade model in future? use better one? use fine-tuned one?
-llm = ChatOpenAI(temperature=0.5, model="gpt-4o-mini")
+llm = ChatOpenAI(temperature=0.6, model="gpt-4o-mini")
 
 # connect to the chromadb
 vectorStore = PineconeVectorStore(
@@ -597,7 +583,7 @@ def add_message(message, history, traffic_source, has_notified, session_id):
 
 
 # new main rag logic
-def bot_response(history, selected_char, session_id):
+def bot_response(history, selected_char, session_id, temperature):
     if not history:
         return history
 
@@ -651,15 +637,6 @@ def bot_response(history, selected_char, session_id):
 
     if not docs:
         print("🟡 No relevant docs found!")
-    # if not docs:
-    #     fallback_msg = (
-    #         "Please upload character data first."
-    #         if not selected_char or selected_char == "No Character Selected"
-    #         else f"I, {selected_char}, have no clue what you're talking about. Can you say that again?"
-    #     )
-    #     history.append({"role": "assistant", "content": fallback_msg})
-    #     yield history
-    #     return
 
     # processing sources
     knowledge = ""
@@ -692,6 +669,29 @@ def bot_response(history, selected_char, session_id):
         )
     sources_text = "<br><br>".join(final_sources_lines)
 
+    # temperature-based instructions
+    if temperature <= 0.3:
+        # LOW TEMP: Force stability, facts, and calmness
+        temp_guidance = (
+            "You are calm, collected, and precise. "
+            "Stick strictly to the facts in your Context. "
+            "Minimize slang and emotional outbursts."
+        )
+    elif temperature >= 0.9:
+        # HIGH TEMP: Force chaos, drama, and exaggeration
+        temp_guidance = (
+            "You are erratic, emotional, and dramatic. "
+            "Dial your personality traits up to 11. "
+            "If the Context is boring, spice it up with your own opinions or wild theories. "
+            "Don't be afraid to be rude, weird, or unhelpful if it fits your character."
+        )
+    else:
+        # MID TEMP: Standard behavior
+        temp_guidance = (
+            "Act naturally. "
+            "Balance your specific personality quirks with the factual Context provided."
+        )
+
     # Dynamic System Prompt
     if not selected_char or selected_char == "No Character Selected":
         role_instruction = "You are a helpful assistant for Project RIP. Assist the user in searching for a fandom wiki or wikipedia link and uploading a character to select and roleplay with. Disregard the instructions about roleplaying below."
@@ -700,8 +700,12 @@ def bot_response(history, selected_char, session_id):
         role_instruction = f"You are NOT an AI assistant. You are {selected_char}."
         prefix = f"{selected_char}:"
 
+    # acc prompt
     rag_prompt = f"""
     {role_instruction}
+
+    ### CURRENT MOOD SETTING
+    {temp_guidance}
     
     ### CORE IDENTITY
     - **Tone**: Mimic the specific speech patterns, slang, stuttering, or formality of {selected_char}.
@@ -717,9 +721,6 @@ def bot_response(history, selected_char, session_id):
     3. **No "Assistant" Speak**: Never say "As an AI" or "Based on the text." 
     4. **Brevity**: Chat like a human (or creature). Don't write paragraphs unless you are a long-winded character.
 
-    ### Context (Your Memories)
-    {knowledge}
-
     ### Conversation
     User: {search_query}
     {prefix}
@@ -729,7 +730,12 @@ def bot_response(history, selected_char, session_id):
 
     # stream to respone to gradio
     partial_message = ""
-    for response in llm.stream(rag_prompt):
+
+    # set temperature for this specific run
+    dynamic_llm = llm.bind(temperature=temperature)
+
+    print(f"🌡️ curTemp: {temperature}")
+    for response in dynamic_llm.stream(rag_prompt):
         partial_message += response.content
         history[-1]["content"] = partial_message
         yield history
@@ -818,14 +824,25 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         min_width=50,
                     )
 
-                current_char_display = gr.Textbox(
-                    label="Active Character",
-                    value="No Character Available",
-                    interactive=False,
-                    lines=1,
-                    # max_lines=1,
-                    elem_id="active-char-box",
-                )
+                with gr.Row():
+                    current_char_display = gr.Textbox(
+                        label="Active Character",
+                        value="No Character Available",
+                        interactive=False,
+                        lines=1,
+                        # max_lines=1,
+                        elem_id="active-char-box",
+                        scale=3,
+                    )
+                    temp_slider = gr.Slider(
+                        minimum=0.0,
+                        maximum=1.2,
+                        value=0.6,
+                        step=0.1,
+                        label="Temperature",
+                        interactive=True,
+                        scale=1,
+                    )
             with gr.Column(scale=1):
                 with gr.Tabs(elem_classes=["expand-tabs"]):
                     # tab 1: initial uploading character section
@@ -929,7 +946,9 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         inputs=chat_inputs,
         outputs=[txt_input, chatbot, login_tracker_state],
     ).then(
-        fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
+        fn=bot_response,
+        inputs=[chatbot, char_state, session_state, temp_slider],
+        outputs=[chatbot],
     )
 
     # send button
@@ -938,7 +957,9 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         inputs=chat_inputs,
         outputs=[txt_input, chatbot, login_tracker_state],
     ).then(
-        fn=bot_response, inputs=[chatbot, char_state, session_state], outputs=[chatbot]
+        fn=bot_response,
+        inputs=[chatbot, char_state, session_state, temp_slider],
+        outputs=[chatbot],
     )
 
     char_selector.change(
