@@ -46,37 +46,85 @@ pc = Pinecone(api_key=API_KEY)
 # CUSTOM CSS #
 ########################################
 custom_css = """
+/* ----------------------------------------------------------------------
+    CHAT INTERFACE & BUBBLES
+---------------------------------------------------------------------- */
+#chat-window {
+    background: transparent !important;
+    background-color: transparent !important;
+    # border: none !important;
+    height: 60vh !important;
+}
 
-/* desktop rules */
+#chat-window .block,
+#chat-window .wrap,
+#chat-window .bubble-wrap {
+    background: transparent !important;
+    border: none !important;
+}
+
+/* spacing btwn bubbles */
+#chat-window .message-wrap {
+    gap: 15px;
+}
+
+/* Avatar Styling */
+#chat-window .avatar-container img {
+    border: none !important;
+    border-width: 0 !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    padding: 0px !important
+}
+
+/* Message Bubbles Base */
+#chat-window .message {
+    # background-color: rgba(30, 30, 30, 0.4) !important;
+    # backdrop-filter: blur(8px) !important;
+    # border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
+    border-radius: 15px !important;
+    color: white !important
+}
+
+/* User Bubble Specifics */
+#chat-window .message.user {
+    # border-bottom-right-radius: 2px !important;
+    background-color: rgba(60, 60, 80, 0.5) !important;
+}
+
+/* Bot Bubble Specifics */
+#chat-window .message.bot {
+    # border-bottom-left-radius: 2px !important;
+    background-color: rgba(40, 40, 40, 0.5) !important;
+}
+
+/* ==========================================================================
+    DESKTOP RULES (min-width: 768px)
+========================================================================== */
 @media (min-width: 768px) {
-    /* HEADER */
-    .header-row {
-        align-items: center !important;
-        margin-bottom: 10px !important;
-    }
-    .header-row h1 {
-        margin: 0 !important; /* Remove default markdown margin */
-    }
 
+    /* ----------------------------------------------------------------------
+        GLOBAL LAYOUT & CONTAINERS
+    ---------------------------------------------------------------------- */
     .gradio-container {
         min-height: 100vh !important;
-        height: auto !important; /* Allow it to grow */
+        height: auto !important;
         overflow-y: auto !important; /* Enable scrolling */
     }
 
-    /*MAIN APP*/
+    /* MAIN APP WRAPPER */
     #main-app {
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
         padding: 0 !important;
         
-        /* Center the app */
-        max-width: 1200px !important; /* Adjust this width as you prefer */
+        max-width: 1200px !important;
         margin-left: auto !important;
         margin-right: auto !important;
 
-        overflow: visible !important; 
+        overflow: visible !important;
         height: auto !important;
         # padding-top: 0px !important;
     }
@@ -89,7 +137,41 @@ custom_css = """
         background: transparent !important;
     }
 
-    /* LOGIN SCREEN */
+    /* HEADER ROW (Title + Logout) */
+    
+    /* Fix header scrollbars */
+    .header-row, 
+    .header-row > .col, 
+    .header-row .block {
+        overflow: visible !important;
+    }
+    
+    .header-row {
+        align-items: center !important;
+        margin-bottom: 10px !important;
+    }
+
+    .header-row h1 {
+        margin: 0 !important;
+    }
+
+    /* MAIN COLUMN FLEX CONTAINER */
+    #main-col {
+        # padding: 0 !important;
+        height: auto !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    #main-col .prose {
+        font-size: 16px !important;
+        line-height: 1.5 !important;
+    }
+
+
+    /* ----------------------------------------------------------------------
+        LOGIN SCREEN
+    ---------------------------------------------------------------------- */
     #login-screen {
         # height: 100% !important;
         display: flex !important;
@@ -99,22 +181,33 @@ custom_css = """
         padding-top: 20px !important;
     }
 
-    #login-screen .block, 
+    #login-screen .block,
     #login-screen .form {
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
     }
+
+    #login-screen > .row {
+        width: 100% !important;
+        max-width: 450px !important;
+    }
     
-    /* Style the text inside login to be white/readable */
+    /* Login Text Styling */
     #login-screen h1, #login-screen p {
         # color: white !important;
         text-align: center !important;
     }
+
+    /* Login Input Row */
     #login-row {
         align-items: center !important;
         gap: 10px !important;
+    }
+
+    #login-row .block {
+        background: transparent !important;
     }
 
     #login-row button {
@@ -122,98 +215,39 @@ custom_css = """
         min-height: 42px !important;
     }
 
-    #login-row textarea, 
+    #login-row textarea,
     #login-row input {
-        background-color: rgba(82, 82, 82, 0.4) !important; /* Dark semi-transparent */
-        # color: white !important;       /* White text */
-        # border: 1px solid rgba(255, 255, 255, 0.7) !important; /* Subtle border */
+        background-color: rgba(82, 82, 82, 0.4) !important;
+        # color: white !important;
+        # border: 1px solid rgba(255, 255, 255, 0.7) !important;
         min-height: 46px !important;
     }
 
-    /* remove white bg */
-    #login-row .block {
-        background: transparent !important;
-    }
-
-    /* glow */
     #login-row input:focus {
         border-color: var(--color-accent) !important;
         background-color: rgba(82, 82, 82, 0.3) !important;
     }
-    
-    /* constrain width of login input */
-    #login-screen > .row {
-        width: 100% !important;
-        max-width: 450px !important;
-    }
 
-    /* FLEX CONTAINER (for main col) */
-    #main-col {
-        # padding: 0 !important;
-        height: auto !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
 
-    #chat-window {
-        background: transparent !important;
-        background-color: transparent !important;
-        # border: none !important;
-        height: 60vh !important; /* Adjust height as needed */
-    }
-
-    #chat-window .block, #chat-window .wrap, #chat-window .bubble-wrap {
-        background: transparent !important;
-        border: none !important;
-    }
-
-    /* the bot text area */
-    #chat-window .message-wrap {
-        gap: 15px; /* Spacing between bubbles */
-    }
-
-    /* --- REMOVE AVATAR BORDERS --- */
-    #chat-window .avatar-container img {
-        border: none !important;
-        border-width: 0 !important;
-        box-shadow: none !important;
-        background-color: transparent !important;
-        padding: 0px !important
-    }
-
-    /* message bubbles */
-    #chat-window .message {
-        # background-color: rgba(30, 30, 30, 0.4) !important;
-        # backdrop-filter: blur(8px) !important;
-        # border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1) !important;
-        border-radius: 15px !important;
-        color: white !important
-    }
-
-    /* user bubbles */
-    #chat-window .message.user {
-        # border-bottom-right-radius: 2px !important;
-        background-color: rgba(60, 60, 80, 0.5) !important;
-    }
-
-    /* bot bubbles */
-    #chat-window .message.bot {
-        # border-bottom-left-radius: 2px !important;
-        background-color: rgba(40, 40, 40, 0.5) !important;
-    }
-
-    #main-col .prose {
-        font-size: 16px !important;
-        line-height: 1.5 !important;
-    }
-
-    /* INPUT ROW STYLING */
+    /* ----------------------------------------------------------------------
+        INPUT ROW & CONTROLS
+    ---------------------------------------------------------------------- */
     #input-row {
         align-items: stretch !important;
         gap: 8px !important;
     }
     
+    #chat-input {
+        overflow: visible !important;
+        border-radius: 12px !important;
+    }
+
+    #chat-input textarea {
+        overflow-y: auto !important; 
+        max-height: 150px !important;
+        border-radius: 12px !important;
+    }
+
     #send-btn {
         height: 100% !important;
         margin: 0 !important;
@@ -223,7 +257,28 @@ custom_css = """
         justify-content: center !important;
     }
 
-    /*TAB EXPANSION (need to adjust, not working properly entirely)*/
+    /* General Input Field Styling (fixes max_lines bug) */
+    .no-wrap textarea, .no-wrap input {
+        white-space: nowrap !important;
+        overflow-x: auto !important;
+        background-color: var(--input-background-fill) !important;
+    }
+
+    /* Hide arrows in temp slider */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none !important; 
+        margin: 0 !important; 
+    }
+    input[type=number] {
+        -moz-appearance: textfield !important;
+    }
+
+
+    /* ----------------------------------------------------------------------
+        SIDEBAR COMPONENTS
+    ---------------------------------------------------------------------- */
+    /* Tabs Expansion */
     .expand-tabs > div:first-child {
         display: flex !important;
         width: 100% !important;
@@ -238,7 +293,7 @@ custom_css = """
         text-align: center !important;
     }
 
-    /* CHARACTER LIST STYLING */
+    /* Character List (Radio Group) */
     .char-radio-group {
         max-height: 60vh !important;
         overflow-y: auto !important;
@@ -281,20 +336,11 @@ custom_css = """
         /*box-shadow: 0 4px 6px rgba(0,0,0,0.1);*/
     }
     
-    /* 6. Hide the default radio circle/bubble */
     .char-radio-group input[type="radio"] {
-        display: none !important; /* hides bubble */
-    }
-    
-    /* other input field styling */
-    .no-wrap textarea, .no-wrap input {
-        white-space: nowrap !important;
-        overflow-x: scroll !important;
-        /* to address bug where max_lines property converts txtbx to input and causes input to be white */
-        background-color: var(--input-background-fill) !important;
+        display: none !important; /* Hide default radio bubble */
     }
 
-    /* system status box styling */
+    /* System Status Box */
     .status-box {
         flex-grow: 1 !important;
         display: flex !important;
@@ -304,22 +350,13 @@ custom_css = """
 
     .status-box textarea {
         height: 65px !important;
-        overflow-y: scroll !important;
-    }
-
-    /* Hide arrows/spinners in number inputs (Slider) */
-    input[type=number]::-webkit-inner-spin-button, 
-    input[type=number]::-webkit-outer-spin-button { 
-        -webkit-appearance: none !important; 
-        margin: 0 !important; 
-    }
-
-    input[type=number] {
-        -moz-appearance: textfield !important;
+        overflow-y: auto !important;
     }
 }
 
-/* mobile rules (screens smaller than 768px) */
+/* ==========================================================================
+    MOBILE RULES (max-width: 767px)
+   ========================================================================== */
 @media (max-width: 767px) {
     #main-app {
         padding: 10px !important; /* Add small padding for mobile edges */
