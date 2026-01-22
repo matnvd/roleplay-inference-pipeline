@@ -934,7 +934,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         gr.Markdown(
             """
             # 🔒 Project RIP Access
-            Please enter the access code to continue.
+            Please enter the access code to continue <br>(should be next to the link on resume).
             """,
             elem_classes=["prose"],
         )
@@ -950,6 +950,25 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             )
             login_btn = gr.Button("Enter", variant="primary", scale=1)
 
+        gr.HTML(
+            """
+            <div style="text-align: center; margin-top: 20px; font-size: 1.1em;">
+                <a href="https://github.com/matnvd/roleplay-inference-pipeline" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-right: 15px;">
+                    📂 GitHub Repository
+                </a>
+                <span style="color: gray;">|</span>
+                <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
+                    ▶️ Watch Demo
+                </a>
+
+                <span style="color: gray;">|</span>
+                
+                <a href="mailto:mathiasnvd07@gmail.com?subject=Project%20RIP%20Bug%20Report" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
+                    🐛 Report Bug
+                </a>
+            </div>
+            """
+        )
         login_error_msg = gr.Markdown("", visible=False)
 
     # main app col
