@@ -12,4 +12,10 @@ https://huggingface.co/spaces/mathiasnvd/project-rip
 
 Video Demo:
 
-[![Project RIP YT Demo](https://img.youtube.com/vi/2Y4AmMF2oZM/0.jpg)](https://youtu.be/2Y4AmMF2oZM)
+<iframe width="644" height="400" 
+    src="https://www.youtube.com/embed/2Y4AmMF2oZM?si=hF2Go23ietXc0V5t" 
+    title="YouTube video player" 
+    frameborder="0" 
+    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen 
+    style="border-radius: 12px;">
+</iframe>
