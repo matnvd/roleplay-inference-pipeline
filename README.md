@@ -5,4 +5,11 @@ Project R.I.P. is a RAG pipeline architecture that rips (haha get it) data from 
 
 It is an ingestion system that scrapes Wiki data (currently supporting Fandom Wiki and Wikipedia links), chunks HTML while appending relevant source metadata, and stores the vector embeddings in a vector database in Pinecone.
 
-There is a system prompt framework that works to enforce strict character and source-retrieval constraints, persistent memory for context retention, and the ability to generate and demarcate between multiple characters and their sources.
+There is a system prompt framework that works to enforce strict character and source-retrieval constraints, persistent memory for context retention, and the ability to generate and demarcate between multiple characters and their sources. 
+
+Live Demo: 
+https://huggingface.co/spaces/mathiasnvd/project-rip
+
+Video Demo:
+
+[![Project RIP YT Demo](https://img.youtube.com/vi/2Y4AmMF2oZM/0.jpg)](https://youtu.be/2Y4AmMF2oZM)
