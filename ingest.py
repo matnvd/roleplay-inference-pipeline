@@ -1,4 +1,5 @@
-from urllib.parse import urlparse, urlunparse
+import re
+from urllib.parse import unquote, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -22,25 +23,97 @@ INDEX_NAME = "project-rip"
 def rip_wiki_content(url):
     print(f"⚡ connecting to {url}...")
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }  # Fakes a real browser so the Wiki doesn't block us
+    html_content = ""
 
-    try:
-        response = requests.get(url, headers=headers)
-        # print(f"response.text: {response.text}")
-        response.raise_for_status()  # Crashes nicely if link is dead (404)
-    except Exception as e:
-        print(f"❌ Error fetching page: {e}")
-        return None, None
+    # wikipedia: using official api
+    if "wikipedia.org" in url:
+        try:
+            # 1. Parse the URL to get Language and Page Title
+            parsed = urlparse(url)
+            # e.g., en.wikipedia.org -> "en"
+            lang = parsed.netloc.split(".")[0]
+            # handles path parsing
+            page_title = unquote(parsed.path.split("/")[-1])
 
-    soup = BeautifulSoup(response.text, "html.parser")
+            print(f"    📖 Detected Wikipedia API. Fetching '{page_title}' ({lang})...")
+
+            # user_agent = "ProjectRip/1.0 (mathiasnvd07@gmail.com)"
+
+            # wiki = wikipediaapi.Wikipedia(
+            #     user_agent=user_agent,
+            #     language=lang,
+            #     extract_format=wikipediaapi.ExtractFormat.HTML,
+            # )
+
+            # page = wiki.page(page_title)
+
+            # if not page.exists():
+            #     print("❌ Page does not exist.")
+            #     return None, None
+
+            # # .text returns HTML because we set extract_format=HTML above
+            # html_content = page.text
+
+            # We use action=parse because it returns the FULL HTML (tables included)
+            api_url = f"https://{lang}.wikipedia.org/w/api.php"
+            params = {
+                "action": "parse",
+                "page": page_title,
+                "format": "json",
+                "prop": "text",  # 'text' keeps the HTML tables; 'extracts' removes them
+                "redirects": 1,
+                "disabletoc": 1,
+            }
+
+            # PASS HEADERS HERE TO FIX 403 ERROR
+            headers = {
+                "User-Agent": "ProjectRip/1.0 (your_email@example.com) python-requests/2.31"
+            }
+            response = requests.get(api_url, params=params, headers=headers)
+
+            if response.status_code == 403:
+                print("❌ Wikipedia blocked the request. Check your User-Agent header.")
+                return None, None
+
+            response.raise_for_status()
+            data = response.json()
+
+            if "error" in data:
+                print(f"❌ API Error: {data['error'].get('info')}")
+                return None, None
+
+            html_content = data["parse"]["text"]["*"]
+
+        except Exception as e:
+            print(f"❌ Error fetching via Wikipedia API: {e}")
+            return None, None
+    else:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            # print(f"response.text: {response.text}")
+            response.raise_for_status()  # Crashes nicely if link is dead (404)
+            html_content = response.text
+        except Exception as e:
+            print(f"❌ Error fetching page: {e}")
+            return None, None
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    # print(f"soup.text: {soup.text}")
+    infobox_text = extract_infobox(soup)
 
     # print(f"soup.title: {soup.title.string if soup.title else 'No Title'}")
     # FINDING CONTENT
-    # On Fandom and wikipedia, article usually inside <div class="mw-parser-output">.
+    # On Fandom Wikis, article usually inside <div class="mw-parser-output">.
     # ignore sidebars, ads, and footers.
     content_div = soup.find("div", {"class": "mw-parser-output"})
+
+    if not content_div and "wikipedia.org" in url:
+        content_div = soup
+
     if not content_div:
         # Fallback for weird Fandom layouts
         print("    🟡 weird fandom layout. searching mw-content-text.")
@@ -54,23 +127,67 @@ def rip_wiki_content(url):
 
     # DATA CLEANING
     # We only want paragraphs <p>, lists <ul>, and headers <h>
-    clean_text = ""
-    section_map = []  # storing: {'start':0, 'end':500, 'header': 'Intro'}
+    # print(f"ℹ️infobox_text: {infobox_text}")
+    clean_text = infobox_text
+    section_map = []  # storing: {'start':0, 'end' :500, 'header': 'Intro'}
+
+    # for source metadata
+    if infobox_text:
+        section_map.append({"start": 0, "end": len(infobox_text), "header": "Infobox"})
 
     current_header = "Introduction"
-    current_idx = 0
+    current_idx = len(clean_text)
 
-    tags_to_scrape = ["p", "h1", "h2", "h3", "h4", "ul"]  # add more later if needed
+    tags_to_scrape = [
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "ul",
+    ]  # add more later if needed
 
-    for element in content_div.find_all(tags_to_scrape, recursive=False):
+    # IGNORE LIST: Skip these sections entirely to reduce noise
+    ignored_headers = [
+        "See also",
+        "References",
+        "External links",
+        "Notes",
+        "Further reading",
+        "Sources",
+    ]
+    skip_current_section = False
+
+    for element in content_div.find_all(tags_to_scrape):
         tag = element.name
         text = element.get_text(" ", strip=True)
+
+        # --- HEADER CLEANING ---
+        if tag in ["h2", "h3", "h4"]:
+            # 1. Remove [edit], [1], and empty []
+            # This regex matches anything inside brackets and removes it
+            text = re.sub(r"\[.*?\]", "", text).strip()
+
+            # 2. Check if we should skip this section
+            if any(ignored in text for ignored in ignored_headers):
+                skip_current_section = True
+                continue  # Skip adding this header
+            else:
+                skip_current_section = False
+
+        # If we are in an ignored section (like References), skip this paragraph
+        if skip_current_section:
+            continue
+
+        # --- TEXT BODY CLEANING ---
+        # Remove citation numbers like [1], [25] from paragraphs
+        text = re.sub(r"\[\d+\]", "", text)
 
         if not text or len(text) < 3:
             continue
 
         # add header info in front of text
-        if tag in ["h2", "h3"]:  # add h4?
+        if tag in ["h2", "h3", "h4"]:  # add h4?
             current_header = text
             text_entry = f"\n\n== {text} ==\n"
             clean_text += text_entry
@@ -93,6 +210,57 @@ def rip_wiki_content(url):
         print("⚠️ Content div found but no extracted text")
 
     return clean_text, section_map
+
+
+# extracting infobox basics for wiki links
+def extract_infobox(soup):
+    infobox_text = ""
+
+    # 1. Find the Infobox (Wikipedia uses .infobox, Fandom uses .portable-infobox)
+    infobox = soup.find("table", class_=lambda x: x and "infobox" in x)
+    if not infobox:
+        infobox = soup.find("aside", {"class": "portable-infobox"})
+
+    if infobox:
+        infobox_text += "== QUICK FACTS (Infobox) ==\n"
+
+        # WIKIPEDIA STYLE (Rows with th/td)
+        rows = infobox.find_all("tr")
+        for row in rows:
+            th = row.find("th")  # Header (Key)
+            td = row.find("td")  # Data (Value)
+
+            if th and td:
+                key = th.get_text(" ", strip=True)
+                val = td.get_text(" ", strip=True)
+
+                val = re.sub(r"\[\d+\]", "", val)
+                val = val.replace("[]", "").strip()
+
+                infobox_text += f"{key}: {val}\n"
+
+            # Handle section headers inside infobox (e.g. "Personal details")
+            elif th and not td:
+                header_text = th.get_text(" ", strip=True)
+                if len(header_text) > 2:
+                    infobox_text += f"\n--- {header_text} ---\n"
+
+        # FANDOM STYLE (divs)
+        if not rows:  # If no table rows found, try Fandom structure
+            for item in infobox.find_all("div", {"class": "pi-item"}):
+                label = item.find("h3", {"class": "pi-data-label"})
+                value = item.find("div", {"class": "pi-data-value"})
+                if label and value:
+                    infobox_text += (
+                        f"{label.get_text(strip=True)}: {value.get_text(strip=True)}\n"
+                    )
+
+        infobox_text += "\n\n"
+
+        # 2. Decompose (delete) the infobox from soup so the main loop doesn't scrape it again
+        infobox.decompose()
+
+    return infobox_text
 
 
 # CHUNKING

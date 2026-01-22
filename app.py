@@ -960,6 +960,28 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         ],
     )
 
+    url_input.submit(
+        fn=ingest_and_clear,
+        inputs=[
+            url_input,
+            char_input,
+            session_state,
+            session_char_history,
+            global_char_state,
+            traffic_source_state,
+        ],
+        outputs=[
+            system_status,
+            char_input,
+            url_input,
+            char_selector,
+            char_state,
+            current_char_display,
+            chatbot,
+            session_char_history,
+        ],
+    )
+
     # makes sure to get character list every time its clicked
     # char_tab.select(
     #     fn=manual_resync,
