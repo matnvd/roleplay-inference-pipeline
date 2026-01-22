@@ -791,6 +791,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         container=False,
                         scale=8,
                         autofocus=True,
+                        elem_id="chat-input",
                     )
                     submit_btn = gr.Button(
                         value="",
@@ -889,6 +890,8 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     ),
                 }
 
+    js_focus = "() => document.querySelector('#chat-input textarea').focus()"
+
     # events
     login_targets = [login_col, main_app_col, traffic_source_state, login_error_msg]
 
@@ -948,7 +951,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             chatbot,
             session_char_history,
         ],
-    )
+    ).then(None, None, None, js=js_focus)
 
     refresh_btn.click(
         fn=manual_resync,
@@ -980,7 +983,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             chatbot,
             session_char_history,
         ],
-    )
+    ).then(None, None, None, js=js_focus)
 
     # makes sure to get character list every time its clicked
     # char_tab.select(
