@@ -30,11 +30,37 @@ ACCESS_CODES = {
 
 # custom css for like everything
 custom_css = """
-/* desktop rules */
 
+/* GENERAL */
+body, html {
+    margin: 0;
+    padding: 0
+}
+
+.gradio-container {
+    margin: 0 !important;
+    padding: 0 !important; /* <--- THIS IS THE KEY FIX */
+    max-width: 100% !important; /* Forces app to fill width */
+    height: 100vh !important;
+    overflow: hidden !important; /* Prevents container from scrolling */
+}
+
+/* desktop rules */
 @media (min-width: 768px) {
+    body, html {
+        height: 100%;
+        overflow: hidden !important; /* Hides browser scrollbar on PC */
+    }
+    
     /*MAIN APP*/
-    #main-app, 
+    #main-app {
+        padding: 20px 0 20px 0 !important;
+        box-sizing: border-box !important; 
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    
     #main-app > .block,
     #main-app > .form,
     #main-app > .wrap {
@@ -42,15 +68,17 @@ custom_css = """
         box-shadow: none !important;
         background: transparent !important;
         padding: 0 !important;
+        
     }
 
     /* LOGIN SCREEN */
     #login-screen {
-        height: 100% !important;
+        height: 100vh !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
+        padding-bottom: 20vh !important;
     }
 
     #login-screen .block, 
@@ -59,6 +87,7 @@ custom_css = """
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
+        width: 100% !important;
     }
     
     /* Style the text inside login to be white/readable */
@@ -100,11 +129,6 @@ custom_css = """
     #login-screen > .row {
         width: 100% !important;
         max-width: 450px !important;
-    }
-    
-    /* CHAT WINDOW STYLING */
-    .gradio-container {
-        height: 100vh !important;
     }
 
     /* FLEX CONTAINER (for main col) */
@@ -280,8 +304,18 @@ custom_css = """
 
 /* mobile rules (screens smaller than 768px) */
 @media (max-width: 767px) {
-    .status-box textarea {
-        height: 400px !important; /* Give it a fixed height so it's usable */
+    body, html, .gradio-container {
+        overflow-y: auto !important;
+        height: auto !important;
+    }
+    
+    #main-app {
+        padding: 10px !important; /* Add small padding for mobile edges */
+    }
+    
+    /* Fix chat window height on mobile so it doesn't take up the whole page */
+    #chat-window {
+        height: 500px !important; 
     }
 }
 """

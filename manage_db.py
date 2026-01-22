@@ -40,7 +40,7 @@ def main():
     print("1. 🗑️ Delete a specific Source URL")
     print("2. 🌎☢️🌎 NUKE IT (Delete ALL data)")
     print("3. 👦 Delete a specific character")
-    print("4. ☢️ Nuke all-known global characters")
+    print("4. ☢️ Nuke all non global characters")
     print("x. ❌ Exit")
 
     choice = input("\nEnter choice (1-4, or x): ").strip()

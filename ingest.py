@@ -213,16 +213,21 @@ def extract_infobox(soup):
     if infobox:
         # --- IMAGE EXTRACTION ---
 
-        img_tag = infobox.find("img", {"class": "mw-file-element"})
+        img_tag = infobox.find("img", {"class": "pi-image-thumbnail"})
 
+        # PRIORITY 2: Semantic wrappers (view-image / infobox-image)
+        # This is standard for Wikipedia and some Fandom layouts
         if not img_tag:
-            img_tag = infobox.find("img", {"class": "pi-image-thumbnail"})
-
-        if not img_tag:
-            wrapper = infobox.find(class_=["infobox-image", "view-image"])
+            wrapper = infobox.find(class_=["infobox-image", "view-image", "image"])
             if wrapper:
                 img_tag = wrapper.find("img")
 
+        # PRIORITY 3: The generic "mw-file-element" (The Risky One)
+        # We only check this if the specific ones above failed.
+        if not img_tag:
+            img_tag = infobox.find("img", {"class": "mw-file-element"})
+
+        # PRIORITY 4: Last Resort
         if not img_tag:
             img_tag = infobox.find("img")
 
@@ -325,7 +330,7 @@ def chunk_text(raw_text, section_map, source_url, character_name, session_id):
             "character": character_name,
             "source": source_url,
             "section": dominant_section,
-            "session_id": session_id,  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
+            "session_id": "demo_roster",  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
         }
 
         # # find all sections that touch this chunk
