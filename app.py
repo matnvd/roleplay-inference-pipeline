@@ -53,6 +53,7 @@ custom_css = """
 
         overflow: visible !important; 
         height: auto !important;
+        # padding-top: 0px !important;
     }
 
     #main-app > .block,
@@ -70,7 +71,7 @@ custom_css = """
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
-        # padding-top: 10vh !important;
+        padding-top: 20px !important;
     }
 
     #login-screen .block, 
@@ -123,6 +124,7 @@ custom_css = """
 
     /* FLEX CONTAINER (for main col) */
     #main-col {
+        # padding: 0 !important;
         height: auto !important;
         display: flex !important;
         flex-direction: column !important;
@@ -1231,10 +1233,15 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     #     outputs=[char_selector, system_status, global_char_state],
     # )
 
+    scroll_to_bottom_js = (
+        "() => window.scrollTo(0, document.body.scrollHeight)"  # doesnt work
+    )
+
     main.load(
         fn=on_app_load,
         inputs=None,
         outputs=[char_selector, system_status, global_char_state, char_images_state],
+        js=scroll_to_bottom_js,
     )
 
 ## def main
