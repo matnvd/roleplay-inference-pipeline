@@ -19,6 +19,7 @@ load_dotenv()
 INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
 GLOBAL_SESSION_ID = "demo_roster"
+GLOBAL_CHAR_CACHE = []  # for hugging face storage
 
 ACCESS_CODES = {
     os.getenv("ADMIN_PASSWORD"): "Admin",
@@ -336,6 +337,7 @@ def update_radio_list(global_list, session_list, selected=None):
 
 # scan pinecone for global characters only
 def fetch_global_characters():
+    global GLOBAL_CHAR_CACHE
     try:
         index = pc.Index(INDEX_NAME)
         dummy_vector = [0.0] * 1536
@@ -353,11 +355,27 @@ def fetch_global_characters():
             if "metadata" in match and "character" in match["metadata"]:
                 unique_chars.add(match["metadata"]["character"])
 
-        return list(unique_chars)
+        char_list = list(unique_chars)
+        GLOBAL_CHAR_CACHE = char_list
+        return char_list
 
     except Exception as e:
         print(f"Resync Error: {e}")
         return []
+
+
+fetch_global_characters()
+
+
+# runs on page load, using cached global list
+def on_app_load():
+    # Use cache if available, otherwise fetch
+    chars = GLOBAL_CHAR_CACHE if GLOBAL_CHAR_CACHE else fetch_global_characters()
+
+    # We pass [] for session_list because a new user has no history yet
+    new_radio = update_radio_list(chars, [], None)
+
+    return (new_radio, f"🟢 Ready. Loaded {len(chars)} characters.", chars)
 
 
 # Wrapper for resync button
@@ -1202,8 +1220,8 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # )
 
     main.load(
-        fn=manual_resync,
-        inputs=[session_char_history, char_state],
+        fn=on_app_load,
+        inputs=None,
         outputs=[char_selector, system_status, global_char_state],
     )
 
