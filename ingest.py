@@ -42,36 +42,43 @@ def rip_wiki_content(url):
                 "action": "parse",
                 "page": page_title,
                 "format": "json",
-                "prop": "text",
+                "prop": "text|images",
                 "redirects": 1,
                 "disabletoc": 1,
             }
 
             # PASS HEADERS HERE TO FIX 403 ERROR
             headers = {
-                "User-Agent": "ProjectRip/1.0 (your_email@example.com) python-requests/2.31"
+                "User-Agent": "ProjectRip/1.0 mathiasnvd07@gmail.com python-requests/2.31"
             }
             response = requests.get(api_url, params=params, headers=headers)
-
-            if response.status_code == 403:
-                print("❌ Wikipedia blocked the request. Check your User-Agent header.")
-                return None, None
-
             response.raise_for_status()
             data = response.json()
 
+            # print(f"response.text: {response.text}")
+
+            if response.status_code == 403:
+                print("❌ Wikipedia blocked the request. Check your User-Agent header.")
+                return None, None, None
+
             if "error" in data:
                 print(f"❌ API Error: {data['error'].get('info')}")
-                return None, None
+                return None, None, None
+
+            if "parse" not in data:
+                print(f"❌ Error: API response missing 'parse' data. Raw: {data}")
+                return None, None, None
 
             html_content = data["parse"]["text"]["*"]
 
         except Exception as e:
             print(f"❌ Error fetching via Wikipedia API: {e}")
-            return None, None
+            return None, None, None
     else:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.google.com/",
         }
 
         try:
@@ -81,7 +88,7 @@ def rip_wiki_content(url):
             html_content = response.text
         except Exception as e:
             print(f"❌ Error fetching page: {e}")
-            return None, None
+            return None, None, None
 
     soup = BeautifulSoup(html_content, "html.parser")
     # print(f"soup.text: {soup.text}")
@@ -112,7 +119,7 @@ def rip_wiki_content(url):
         print(
             "❌ Could not find main content div. Page structure is unknown, try uploading a wiki page."
         )
-        return None, None
+        return None, None, None
 
     # DATA CLEANING
     # We only want paragraphs <p>, lists <ul>, and headers <h>
@@ -287,7 +294,9 @@ def extract_infobox(soup):
 
 # CHUNKING
 # nlp pre-processing: splits long txt into chunks for vector db
-def chunk_text(raw_text, section_map, source_url, character_name, session_id):
+def chunk_text(
+    raw_text, section_map, source_url, character_name, session_id, image_url
+):
     print("🔪 Chunking text...")
 
     # splits Paragraph by (\n\n) first, then Sentence (.), then Word.
@@ -330,7 +339,8 @@ def chunk_text(raw_text, section_map, source_url, character_name, session_id):
             "character": character_name,
             "source": source_url,
             "section": dominant_section,
-            "session_id": "demo_roster",  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
+            "session_id": session_id,  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
+            "image_url": image_url or "",
         }
 
         # # find all sections that touch this chunk
@@ -395,10 +405,10 @@ def ingest_to_pinecone(chunks):
 # MAIN (exported) FUNCTION
 def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
     if not url:
-        return "⚠️ No URL provided."
+        return "⚠️ No URL provided.", None
 
     if not session_id:
-        return "⚠️ Error: No Session ID provided."
+        return "⚠️ Error: No Session ID provided.", None
 
     if not character_name:
         character_name = "Unknown Character"  # add counter for num of characters
@@ -411,7 +421,7 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
         print(f"🧹 Normalized URL: '{url}' -> '{clean_url}'")
 
     if check_if_url_exists(clean_url, session_id):
-        return f"⚠️ Skipping ingestion. '{clean_url}' is already in the DB."
+        return f"⚠️ Skipping ingestion. '{clean_url}' is already in the DB.", None
 
     print(
         f"🔗 New URL detected for character '{character_name}': {clean_url} (Session: {session_id})"
@@ -421,16 +431,21 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
     try:
         raw_data, map_data, image_url = rip_wiki_content(clean_url)
     except Exception:
-        return "❌ Failed to scrape content."
+        return (
+            "❌ Failed to scrape content (This Wiki may have stronger anti-scraping measures).",
+            None,
+        )
 
     if not raw_data:
         print("❌ No data available at all")
-        return "❌ Failed to scrape content"
+        return "❌ Failed to scrape content", None
 
     # run transformer
-    final_chunks = chunk_text(raw_data, map_data, clean_url, character_name, session_id)
+    final_chunks = chunk_text(
+        raw_data, map_data, clean_url, character_name, session_id, image_url
+    )
     if not final_chunks:
-        return "❌ Failed to create chunks"
+        return "❌ Failed to create chunks", None
 
     print("\n--- METADATA (preview): ---")
     for i in range(min(5, len(final_chunks))):

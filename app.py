@@ -31,54 +31,46 @@ ACCESS_CODES = {
 # custom css for like everything
 custom_css = """
 
-/* GENERAL */
-body, html {
-    margin: 0;
-    padding: 0
-}
-
-.gradio-container {
-    margin: 0 !important;
-    padding: 0 !important; /* <--- THIS IS THE KEY FIX */
-    max-width: 100% !important; /* Forces app to fill width */
-    height: 100vh !important;
-    overflow: hidden !important; /* Prevents container from scrolling */
-}
-
 /* desktop rules */
 @media (min-width: 768px) {
-    body, html {
-        height: 100%;
-        overflow: hidden !important; /* Hides browser scrollbar on PC */
+    .gradio-container {
+        min-height: 100vh !important;
+        height: auto !important; /* Allow it to grow */
+        overflow-y: auto !important; /* Enable scrolling */
     }
-    
+
     /*MAIN APP*/
     #main-app {
-        padding: 20px 0 20px 0 !important;
-        box-sizing: border-box !important; 
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
+        padding: 0 !important;
+        
+        /* Center the app */
+        max-width: 1200px !important; /* Adjust this width as you prefer */
+        margin-left: auto !important;
+        margin-right: auto !important;
+
+        overflow: visible !important; 
+        height: auto !important;
     }
-    
+
     #main-app > .block,
     #main-app > .form,
     #main-app > .wrap {
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
-        padding: 0 !important;
-        
     }
 
     /* LOGIN SCREEN */
     #login-screen {
-        height: 100vh !important;
+        # height: 100% !important;
         display: flex !important;
         flex-direction: column !important;
         justify-content: center !important;
         align-items: center !important;
-        padding-bottom: 20vh !important;
+        # padding-top: 10vh !important;
     }
 
     #login-screen .block, 
@@ -87,7 +79,6 @@ body, html {
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
-        width: 100% !important;
     }
     
     /* Style the text inside login to be white/readable */
@@ -95,7 +86,6 @@ body, html {
         # color: white !important;
         text-align: center !important;
     }
-
     #login-row {
         align-items: center !important;
         gap: 10px !important;
@@ -133,7 +123,7 @@ body, html {
 
     /* FLEX CONTAINER (for main col) */
     #main-col {
-        height: 100% !important;
+        height: auto !important;
         display: flex !important;
         flex-direction: column !important;
     }
@@ -142,7 +132,7 @@ body, html {
         background: transparent !important;
         background-color: transparent !important;
         # border: none !important;
-        height: 65vh !important; /* Adjust height as needed */
+        height: 60vh !important; /* Adjust height as needed */
     }
 
     #chat-window .block, #chat-window .wrap, #chat-window .bubble-wrap {
@@ -286,7 +276,7 @@ body, html {
     }
 
     .status-box textarea {
-        height: 85px !important;
+        height: 65px !important;
         overflow-y: scroll !important;
     }
 
@@ -304,11 +294,6 @@ body, html {
 
 /* mobile rules (screens smaller than 768px) */
 @media (max-width: 767px) {
-    body, html, .gradio-container {
-        overflow-y: auto !important;
-        height: auto !important;
-    }
-    
     #main-app {
         padding: 10px !important; /* Add small padding for mobile edges */
     }
@@ -385,17 +370,28 @@ def fetch_global_characters():
         )
 
         unique_chars = set()
+        image_map = {}
+
         for match in query_response["matches"]:
-            if "metadata" in match and "character" in match["metadata"]:
-                unique_chars.add(match["metadata"]["character"])
+            if "metadata" in match:
+                meta = match["metadata"]
+                char_name = meta.get("character")
+                img_url = meta.get("image_url")
+
+                if char_name:
+                    unique_chars.add(char_name)
+
+                    # If we haven't found an image for this char yet, or if the current one is empty
+                    if char_name not in image_map and img_url:
+                        image_map[char_name] = img_url
 
         char_list = list(unique_chars)
         GLOBAL_CHAR_CACHE = char_list
-        return char_list
+        return char_list, image_map
 
     except Exception as e:
         print(f"Resync Error: {e}")
-        return []
+        return [], {}
 
 
 fetch_global_characters()
@@ -404,23 +400,29 @@ fetch_global_characters()
 # runs on page load, using cached global list
 def on_app_load():
     # Use cache if available, otherwise fetch
-    chars = GLOBAL_CHAR_CACHE if GLOBAL_CHAR_CACHE else fetch_global_characters()
+    chars, global_images = fetch_global_characters()
 
     # We pass [] for session_list because a new user has no history yet
     new_radio = update_radio_list(chars, [], None)
 
-    return (new_radio, f"🟢 Ready. Loaded {len(chars)} characters.", chars)
+    return (
+        new_radio,
+        f"🟢 Ready. Loaded {len(chars)} characters.",
+        chars,
+        global_images,
+    )
 
 
 # Wrapper for resync button
 def manual_resync(session_history, current_selection):
-    global_chars = fetch_global_characters()
+    global_chars, image_map = fetch_global_characters()
 
     print(f"🌎 Global Chars: {global_chars}")
     return (
         update_radio_list(global_chars, session_history, current_selection),
         f"✅ Synced. {len(global_chars)} Global + {len(session_history)} Session characters.",
         global_chars,  # update global state
+        image_map,
     )
 
 
@@ -448,43 +450,6 @@ def generate_radio(choices, selected=None):
     # Keep selection if it exists in new choices, otherwise pick first
     new_val = selected if (selected and selected in choices) else choices[0]
     return gr.Radio(choices=choices, value=new_val, interactive=True)
-
-
-# bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values, sorts list too
-def resync_characters_scan(session_id, current_selection):
-    if not session_id:
-        return generate_radio([]), "⚠️ Error: No session ID found, Refresh page.", []
-    try:
-        index = pc.Index(INDEX_NAME)
-
-        dummy_vector = [0.0] * 1536
-        query_response = index.query(
-            vector=dummy_vector,
-            top_k=10000,  # max limit should be 10k (should grab all characters)
-            include_metadata=True,
-            include_values=False,
-            filter={"session_id": session_id},
-        )
-
-        unique_chars = set()
-        for match in query_response["matches"]:
-            if "metadata" in match and "character" in match["metadata"]:
-                unique_chars.add(match["metadata"]["character"])
-
-        new_choices = sorted(list(unique_chars))
-        # default_val = new_choices[0] if new_choices else None
-
-        print(f"👦 new char list: {unique_chars}")
-
-        # return new list + status update
-        return (
-            generate_radio(new_choices, current_selection),
-            f"✅ Resync Complete. Found {len(unique_chars)} characters.",
-            new_choices,
-        )
-
-    except Exception as e:
-        return f"⚠️ Error during resync: {str(e)}"
 
 
 ########################################
@@ -588,7 +553,7 @@ def ingest_and_clear(
             "",
             gr.update(),
             "No Character Selected",
-            "Active Character: None",
+            "No Active Character",
             gr.update(),
             last_char,
             session_history,
@@ -618,8 +583,6 @@ def ingest_and_clear(
     status_msg, img_url = ingest_fandom_wiki(
         target_url, character_name, session_id, traffic_source
     )
-    # save_to_registry(character_name)
-    # new_radio, _, new_char_list = resync_characters_scan(session_id, character_name)
 
     if "✅ Successfully ingested" in status_msg:
         if character_name not in session_history:
@@ -640,7 +603,7 @@ def ingest_and_clear(
         "",  # clear url_input
         new_radio,  # refresh list
         character_name,  # update char_state
-        f"Active Character: {character_name}",  # update current char display
+        f"Speaking With: {character_name}",  # update current char display
         gr.Chatbot(
             value=[], label=character_name, avatar_images=(None, new_avatar)
         ),  # update chatbot label
@@ -657,7 +620,7 @@ def save_and_switch_character(
     if new_selection == old_selection:
         return (
             old_selection,
-            f"Active Character: {old_selection}",
+            f"Speaking With: {old_selection}",
             gr.update(),
             history_map,
         )
@@ -676,7 +639,7 @@ def save_and_switch_character(
 
     return (
         new_selection,  # New char_state
-        f"Active Character: {new_label}",  # New text display
+        f"Speaking With: {new_label}",  # New text display
         gr.Chatbot(  # New chatbot state
             value=new_history, label=new_label, avatar_images=(None, avatar_url)
         ),
@@ -1056,7 +1019,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         interactive=True,
                         scale=1,
                     )
-            with gr.Column(scale=1):
+            with gr.Column(scale=2):
                 with gr.Tabs(elem_classes=["expand-tabs"]):
                     # tab 1: initial uploading character section
                     with gr.Tab("🚀 Upload Context", scale=1) as upload_tab:
@@ -1106,9 +1069,9 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     label="System Status",
                     value="🟢 Ready 🟢",
                     interactive=False,
-                    lines=10,
+                    lines=8,
                     scale=2,
-                    max_lines=20,
+                    max_lines=10,
                     elem_classes="status-box",
                 )
 
@@ -1226,11 +1189,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     refresh_btn.click(
         fn=manual_resync,
         inputs=[session_char_history, char_state],
-        outputs=[
-            char_selector,
-            system_status,
-            global_char_state,
-        ],
+        outputs=[char_selector, system_status, global_char_state, char_images_state],
     )
 
     url_input.submit(
@@ -1275,7 +1234,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     main.load(
         fn=on_app_load,
         inputs=None,
-        outputs=[char_selector, system_status, global_char_state],
+        outputs=[char_selector, system_status, global_char_state, char_images_state],
     )
 
 ## def main
