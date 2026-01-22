@@ -33,6 +33,14 @@ custom_css = """
 
 /* desktop rules */
 @media (min-width: 768px) {
+    .header-row {
+        align-items: center !important;
+        margin-bottom: 10px !important;
+    }
+    .header-row h1 {
+        margin: 0 !important; /* Remove default markdown margin */
+    }
+
     .gradio-container {
         min-height: 100vh !important;
         height: auto !important; /* Allow it to grow */
@@ -907,6 +915,17 @@ def trigger_greeting(selected_char, session_id, temperature, history):
         yield history
 
 
+def logout():
+    print("🔒 User logged out")
+    return {
+        login_col: gr.Column(visible=True),
+        main_app_col: gr.Column(visible=False),
+        traffic_source_state: "Unknown",
+        pass_input: "",  # Clear the password field
+        login_error_msg: gr.Markdown(visible=False),  # Clear any old error messages
+    }
+
+
 ########################################
 # MAIN FRONTENT/UI #
 ########################################
@@ -972,7 +991,12 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
     # main app col
     with gr.Column(elem_id="main-app", visible=False) as main_app_col:
-        gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
+        with gr.Row(elem_classes=["header-row"]):
+            with gr.Column(scale=8):
+                gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
+            logout_btn = gr.Button(
+                "🚪 Log Out", size="sm", variant="secondary", scale=1, min_width=100
+            )
 
         # control panel
         with gr.Row():
@@ -1226,12 +1250,17 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         ],
     ).then(None, None, None, js=js_focus)
 
-    # makes sure to get character list every time its clicked
-    # char_tab.select(
-    #     fn=manual_resync,
-    #     inputs=[session_char_history, char_state],
-    #     outputs=[char_selector, system_status, global_char_state],
-    # )
+    logout_btn.click(
+        fn=logout,
+        inputs=None,
+        outputs=[
+            login_col,
+            main_app_col,
+            traffic_source_state,
+            pass_input,
+            login_error_msg,
+        ],
+    )
 
     scroll_to_bottom_js = (
         "() => window.scrollTo(0, document.body.scrollHeight)"  # doesnt work
