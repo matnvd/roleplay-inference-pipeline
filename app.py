@@ -228,6 +228,24 @@ custom_css = """
         background-color: rgba(82, 82, 82, 0.3) !important;
     }
 
+    /* login video */
+    #login-demo-video {
+        max-width: 800px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        margin-top: 20px !important;
+        margin-bottom: 20px !important;
+        display: block !important;
+    }
+
+    #login-demo-video > .prose {
+        display: flex !important;
+        justify-content: center !important;
+        width: 100% !important;
+    }
 
     /* ----------------------------------------------------------------------
         INPUT ROW & CONTROLS
@@ -365,6 +383,12 @@ custom_css = """
     /* Fix chat window height on mobile so it doesn't take up the whole page */
     #chat-window {
         height: 500px !important; 
+    }
+
+    #login-demo-video iframe {
+        width: 100% !important;
+        height: auto !important;
+        aspect-ratio: 16 / 10;
     }
 }
 """
@@ -1011,10 +1035,6 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                 <a href="https://github.com/matnvd/roleplay-inference-pipeline" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-right: 15px;">
                     📂 GitHub Repository
                 </a>
-                <span style="color: gray;">|</span>
-                <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
-                    ▶️ Watch Demo
-                </a>
 
                 <span style="color: gray;">|</span>
                 
@@ -1024,6 +1044,21 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             </div>
             """
         )
+
+        embed_html = """
+        <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+            <iframe width="644" height="400" 
+                src="https://www.youtube.com/embed/2Y4AmMF2oZM?si=hF2Go23ietXc0V5t" 
+                title="YouTube video player" 
+                frameborder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen 
+                style="border-radius: 12px;">
+            </iframe>
+        </div>
+        """
+
+        gr.HTML(embed_html, elem_id="login-demo-video")
+
         login_error_msg = gr.Markdown("", visible=False)
 
     # main app col
