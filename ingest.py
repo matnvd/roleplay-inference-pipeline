@@ -402,7 +402,8 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
         return "❌ Failed to scrape content."
 
     if not raw_data:
-        return "❌ Failed to scrape content, no data available"
+        print("❌ No data available at all")
+        return "❌ Failed to scrape content"
 
     # run transformer
     final_chunks = chunk_text(raw_data, map_data, clean_url, character_name, session_id)

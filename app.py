@@ -313,7 +313,7 @@ NUM_RESULTS = 8
 
 def get_session_id():
     new_id = str(uuid.uuid4())
-    print(f"\n\n🆕 New Session Started: {new_id}")
+    print(f"\n\n🆕 NEW SESSION STARTED: {new_id}")
     return new_id
 
 
@@ -406,7 +406,7 @@ def generate_radio(choices, selected=None):
 # bc pinecone unique metadata field search dne, use dummy vector to scan entire db for unique values, sorts list too
 def resync_characters_scan(session_id, current_selection):
     if not session_id:
-        return generate_radio([]), "⚠️ Error: No session ID", []
+        return generate_radio([]), "⚠️ Error: No session ID found, Refresh page.", []
     try:
         index = pc.Index(INDEX_NAME)
 
@@ -483,9 +483,10 @@ condense_prompt = PromptTemplate.from_template(
     to be a self-contained query that includes necessary context from the history.
     
     CRITICAL RULES:
-    1. If the user is roleplaying or chatting casually, KEEP that tone. Do not turn it into a dry question.
-    2. If the user refers to "you", replace "you" with the character's name: {character_name}.
-    3. Resolve pronouns (it, him, her, they) based on history.
+    1. If the user refers to "you", replace "you" with the character's name: {character_name}.
+    2. Resolve pronouns (it, him, her, they) based on history.
+    3. **NO HALLUCINATION**: If the Follow Up Input is gibberish, keyboard smashing (e.g. "asdf"), or completely unrelated to the history, RETURN IT EXACTLY AS IS. Do not try to make sense of it.
+    4. If the user is just saying "hello" or a short reaction, return it exactly as is.
 
     Chat History:
     {chat_history}
@@ -505,6 +506,7 @@ def ingest_and_clear(
     session_history,
     global_chars,
     traffic_source,
+    last_char,
 ):
     # security check
     if not traffic_source or traffic_source == "Unknown":
@@ -518,6 +520,18 @@ def ingest_and_clear(
             gr.update(),
             "No Character Selected",
             "Active Character: None",
+            gr.update(),
+            session_history,
+        )
+
+    if "wikipedia.org" not in target_url and "fandom.com" not in target_url:
+        return (
+            "⚠️ Error: Invalid URL. Only 'wikipedia.org' and 'fandom.com' links are supported.",  # System Status
+            character_name,  # Don't clear name so user doesn't have to retype
+            target_url,  # Don't clear URL so user can fix it
+            gr.update(),  # No change to radio list
+            gr.update(),
+            gr.update(),
             gr.update(),
             session_history,
         )
@@ -636,14 +650,16 @@ def bot_response(history, selected_char, session_id):
         docs = []
 
     if not docs:
-        fallback_msg = (
-            "Please upload character data first."
-            if not selected_char or selected_char == "No Character Selected"
-            else f"I, {selected_char}, have no clue what you're talking about. Can you say that again?"
-        )
-        history.append({"role": "assistant", "content": fallback_msg})
-        yield history
-        return
+        print("🟡 No relevant docs found!")
+    # if not docs:
+    #     fallback_msg = (
+    #         "Please upload character data first."
+    #         if not selected_char or selected_char == "No Character Selected"
+    #         else f"I, {selected_char}, have no clue what you're talking about. Can you say that again?"
+    #     )
+    #     history.append({"role": "assistant", "content": fallback_msg})
+    #     yield history
+    #     return
 
     # processing sources
     knowledge = ""
@@ -817,7 +833,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         gr.Markdown("""
                         **How to use:**
                         1. Upload your **own** character (or **choose** an existing one!).
-                        1. Paste a **Wikipedia** or **Fandom Wiki** URL (or two!).
+                        1. Paste a **Wikipedia** or **Fandom Wiki** URL.
                         2. Click **Upload** and wait for Success.
                         4. Chat on the left!
                         """)
@@ -940,6 +956,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             session_char_history,
             global_char_state,
             traffic_source_state,
+            char_state,
         ],
         outputs=[
             system_status,
