@@ -38,8 +38,8 @@ def send_upload_notification(character_name, source_url, session_id):
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         response.raise_for_status()
         print("🔔 Character upload Discord notification sent!")
-    except Exception as e:
-        print(f"❌ Failed to send upload notification: {e}")
+    except Exception:
+        print("❌ Failed to send upload notification")
 
 
 # for notifying ab diff trafic sources
@@ -71,5 +71,5 @@ def send_traffic_notification(traffic_source, session_id):
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         response.raise_for_status()
         print("🔔 Traffic source Discord notification sent!")
-    except Exception as e:
-        print(f"❌ Failed to send traffic notification: {e}")
+    except Exception:
+        print("❌ Failed to send traffic notification:")
