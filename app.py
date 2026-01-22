@@ -750,6 +750,64 @@ def bot_response(history, selected_char, session_id, temperature):
         yield history
 
 
+def trigger_greeting(selected_char, session_id, temperature):
+    # Skip if no character is selected
+    if not selected_char or selected_char == "No Character Selected":
+        return []
+
+    print(f"👋 Triggering greeting for: {selected_char}")
+
+    # (Reuse the same visibility filter from bot_response)
+    visibility_filter = {
+        "$or": [
+            {"session_id": {"$eq": session_id}},
+            {"session_id": {"$eq": GLOBAL_SESSION_ID}},
+        ]
+    }
+    char_filter = {"character": {"$eq": selected_char}}
+    final_filter = {"$and": [visibility_filter, char_filter]}
+
+    # Search for "identity" or "intro" specifically
+    docs = vectorStore.similarity_search(
+        "Who am I? Personality, introduction, and famous quotes.",
+        k=5,  # brief search
+        filter=final_filter,
+    )
+
+    knowledge = "\n".join([doc.page_content for doc in docs])
+
+    # 2. Construct the Greeting Prompt
+    greeting_prompt = f"""
+    You are {selected_char}.
+    
+    ### YOUR CONTEXT (Memories)
+    {knowledge}
+    
+    ### INSTRUCTION
+    You have just encountered a new user.
+    Generate a short, engaging opening line (1-2 sentences) to start the conversation.
+    
+    CRITICAL RULES:
+    1. **Stay In Character**: If you are a villain, be arrogant. If you are a shy anime girl, stutter.
+    2. **Prompt the User**: Give them a reason to reply (ask a question, make a demand, or comment on the surroundings).
+    3. **NO AI Slop**: Do NOT say "How can I help you?" or "I am ready to chat."
+    
+    Start the conversation now:
+    """
+
+    # We initialize history with one empty assistant message
+    history = [{"role": "assistant", "content": ""}]
+
+    # Bind temperature for variety
+    dynamic_llm = llm.bind(temperature=temperature)
+
+    partial_message = ""
+    for response in dynamic_llm.stream(greeting_prompt):
+        partial_message += response.content
+        history[-1]["content"] = partial_message
+        yield history
+
+
 ########################################
 # MAIN FRONTENT/UI #
 ########################################
@@ -966,6 +1024,10 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         fn=update_char_ui,
         inputs=char_selector,
         outputs=[char_state, current_char_display, chatbot],
+    ).then(
+        fn=trigger_greeting,
+        inputs=[char_state, session_state, temp_slider],
+        outputs=[chatbot],
     )
 
     ingest_btn.click(
