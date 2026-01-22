@@ -5,71 +5,88 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
 
 # for notifying pinecone db updates to avoid overusage
 def send_upload_notification(character_name, source_url, session_id):
-    if not DISCORD_WEBHOOK_URL:
-        print("⚠️ No Discord Webhook URL found in .env, skipping notification.")
+    if not SLACK_WEBHOOK_URL:
+        print("⚠️ No Slack Webhook URL found, skipping notification.")
         return
 
     payload = {
-        "username": "Project RIP Notifier Bot",
-        "embeds": [
+        "text": f"🚀 New Character: {character_name}",
+        "blocks": [
             {
-                "title": "🚀 New Character Uploaded!",
-                "color": 5763719,  # green
+                "type": "header",
+                "text": {"type": "plain_text", "text": "🚀 New Character Uploaded!"},
+            },
+            {
+                "type": "section",
                 "fields": [
-                    {"name": "🎭 Character", "value": character_name, "inline": True},
+                    {"type": "mrkdwn", "text": f"*🎭 Character:*\n{character_name}"},
                     {
-                        "name": "🔗 Source",
-                        "value": f"[Wiki Link]({source_url})",
-                        "inline": True,
+                        "type": "mrkdwn",
+                        "text": f"*🔗 Source:*\n<{source_url}|Wiki Link>",
                     },
-                    {"name": "Session_ID", "value": session_id, "inline": True},
                 ],
-                "footer": {"text": "Project RIP Vector Database"},
-            }
+            },
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Session ID:* `{session_id}` | _Project RIP Vector Database_",
+                    }
+                ],
+            },
         ],
     }
 
     try:
-        response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response = requests.post(SLACK_WEBHOOK_URL.strip(), json=payload, timeout=10)
         response.raise_for_status()
-        print("🔔 Character upload Discord notification sent!")
-    except Exception:
-        print("❌ Failed to send upload notification")
+        print("🔔 Character upload Slack notification sent!")
+    except Exception as e:
+        print(f"❌ Failed to send Slack upload notification: {e}")
 
 
-# for notifying ab diff trafic sources
+# for notifying ab diff traffic sources
 def send_traffic_notification(traffic_source, session_id):
-    if not DISCORD_WEBHOOK_URL:
-        print("⚠️ No Discord Webhook URL found in .env, skipping notification.")
+    if not SLACK_WEBHOOK_URL:
+        print("⚠️ No Slack Webhook URL found, skipping notification.")
         return
 
     payload = {
-        "username": "Project RIP Ingestion Bot",
-        "embeds": [
+        "text": f"🔓 Login Alert: {traffic_source}",
+        "blocks": [
             {
-                "title": "🔓 New Login Alert!",
-                "color": 15548997,  # red
+                "type": "header",
+                "text": {"type": "plain_text", "text": "🔓 New Login Alert!"},
+            },
+            {
+                "type": "section",
                 "fields": [
                     {
-                        "name": "🌐 Traffic Source",
-                        "value": traffic_source,
-                        "inline": True,
+                        "type": "mrkdwn",
+                        "text": f"*🌐 Traffic Source:*\n{traffic_source}",
                     },
-                    {"name": "Session_ID", "value": session_id, "inline": True},
+                    {"type": "mrkdwn", "text": f"*🆔 Session ID:*\n`{session_id}`"},
                 ],
-                "footer": {"text": "Project RIP Vector Database"},
-            }
+            },
+            {"type": "divider"},
+            {
+                "type": "context",
+                "elements": [
+                    {"type": "mrkdwn", "text": "Project RIP Security Monitor"}
+                ],
+            },
         ],
     }
 
     try:
-        response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        response = requests.post(SLACK_WEBHOOK_URL.strip(), json=payload, timeout=10)
         response.raise_for_status()
-        print("🔔 Traffic source Discord notification sent!")
-    except Exception:
-        print("❌ Failed to send traffic notification:")
+        print("🔔 Traffic source Slack notification sent!")
+    except Exception as e:
+        print(f"❌ Failed to send Slack traffic notification: {e}")

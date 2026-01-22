@@ -349,7 +349,7 @@ custom_css = """
     }
 
     .status-box textarea {
-        height: 65px !important;
+        height: 85px !important;
         overflow-y: auto !important;
     }
 }
