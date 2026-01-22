@@ -14,45 +14,41 @@ API_KEY = os.getenv("PINECONE_API_KEY")
 GLOBAL_SESSION_ID = "demo_roster"
 
 
+# dev tool for cleaning/manging pinecone database
 def main():
     if not API_KEY:
-        print("❌ Error: PINECONE_API_KEY not found in .env file.")
+        print("❌ PINECONE_API_KEY not found in .env file.")
         return
 
-    # 1. Initialize Connection
     try:
         pc = Pinecone(api_key=API_KEY)
         index = pc.Index(INDEX_NAME)
         stats = index.describe_index_stats()
 
-        print("\n==========================================")
-        print(f" 🗄️  DATABASE MANAGER: {INDEX_NAME}")
-        print("==========================================")
+        print(f"🗄️ DB Name: {INDEX_NAME}")
         print(f"📊 Current Total Vectors: {stats.total_vector_count}")
-        print("==========================================\n")
 
     except Exception as e:
         print(f"❌ Could not connect to Pinecone: {e}")
         return
 
-    # 2. Menu Options
+    # menu options
     print("What would you like to do?")
     print("1. 🗑️ Delete a specific Source URL")
-    print("2. 🌎☢️🌎 NUKE IT (Delete ALL data)")
-    print("3. 👦 Delete a specific character")
-    print("4. ☢️ Nuke all non global characters")
+    print("2. 👦 Delete a specific character")
+    print("3. ☢️ Nuke all non global characters")
+    print("4. 🌎☢️🌎 NUKE IT (Delete ALL data)")
     print("x. ❌ Exit")
 
     choice = input("\nEnter choice (1-4, or x): ").strip()
 
-    # --- OPTION 1: DELETE SPECIFIC URL ---
+    # delete url
     if choice == "1":
-        target_url = input("\nEnter the full Source URL to remove: ").strip()
+        target_url = input("\nEnter the full source url to remove: ").strip()
 
         parsed = urlparse(target_url)
         clean_url = urlunparse(parsed._replace(fragment="")).rstrip("/")
 
-        # Debug: Show user what happened
         if target_url != clean_url:
             print(f"🧹 Normalized URL: '{target_url}' -> '{clean_url}'")
 
@@ -62,20 +58,79 @@ def main():
 
         print(f"\n🔍 Deleting vectors where metadata['source'] == '{clean_url}'...")
         try:
-            # The Magic Line: Deletes only vectors matching the filter
             index.delete(filter={"source": clean_url})
             print(f"✅ Success! All chunks from '{clean_url}' have been removed.")
 
-            # Verify update
-            time.sleep(2)  # Give Pinecone a moment to update stats
+            # wait for pinecone to update stats
+            time.sleep(2)
             new_stats = index.describe_index_stats()
             print(f"📊 New Total Vector Count: {new_stats.total_vector_count}")
 
         except Exception as e:
             print(f"❌ Error deleting data: {e}")
 
-    # --- OPTION 2: DELETE ALL ---
+    # filter by character
     elif choice == "2":
+        target_char = input("\nEnter the full character name to remove: ").strip()
+
+        print(
+            f"\n🔍 Deleting vectors where metadata['character'] == '{target_char}'..."
+        )
+        try:
+            index.delete(filter={"character": target_char})
+            print(f"✅ Success! All chunks from '{target_char}' have been removed.")
+
+            # wait for pinecone to update stats
+            time.sleep(2)
+            new_stats = index.describe_index_stats()
+            print(f"📊 New Total Vector Count: {new_stats.total_vector_count}")
+
+        except Exception as e:
+            print(f"❌ Error deleting data: {e}")
+
+    # delete non-global characters
+    elif choice == "3":
+        dummy_vector = [0.0] * 1536
+
+        # get lots of matches to find various session IDs
+        results = index.query(vector=dummy_vector, top_k=10000, include_metadata=True)
+
+        sessions_to_delete = set()
+
+        for match in results["matches"]:
+            if "metadata" in match:
+                sid = match["metadata"].get("session_id")
+                if sid and sid != GLOBAL_SESSION_ID:
+                    sessions_to_delete.add(sid)
+
+        if not sessions_to_delete:
+            print("✅ No temporary sessions found. Database is clean!")
+            return
+
+        print(
+            f"Found {len(sessions_to_delete)} temporary sessions to delete: {sessions_to_delete}"
+        )
+        confirm = input("Type 'DELETE' to confirm wiping these sessions: ")
+
+        if confirm != "DELETE":
+            print("❌ Operation cancelled.")
+            return
+
+        for sid in sessions_to_delete:
+            print(f"Deleting session: {sid}...")
+            try:
+                index.delete(filter={"session_id": sid})
+            except Exception as e:
+                print(f"❌ Error deleting {sid}: {e}")
+
+        # wait a second for pinecone stats
+        time.sleep(5)
+        final_stats = index.describe_index_stats()
+        print("\n✅ Cleanup Complete.")
+        print(f"📊 New Vector Count: {final_stats.total_vector_count}")
+
+    # delete all
+    elif choice == "4":
         print(f"Deleting ALL {stats.total_vector_count} vectors.")
 
         confirm = input("Type 'DELETE' exactly to confirm: ").strip()
@@ -87,74 +142,9 @@ def main():
             except Exception as e:
                 print(f"❌ Error clearing index: {e}")
         else:
-            print("🚫 Confirmation failed. Operation cancelled.")
-
-    # filter by character
-    elif choice == "3":
-        target_char = input("\nEnter the full character name to remove: ").strip()
-
-        print(
-            f"\n🔍 Deleting vectors where metadata['character'] == '{target_char}'..."
-        )
-        try:
-            # The Magic Line: Deletes only vectors matching the filter
-            index.delete(filter={"character": target_char})
-            print(f"✅ Success! All chunks from '{target_char}' have been removed.")
-
-            # Verify update
-            time.sleep(2)  # Give Pinecone a moment to update stats
-            new_stats = index.describe_index_stats()
-            print(f"📊 New Total Vector Count: {new_stats.total_vector_count}")
-
-        except Exception as e:
-            print(f"❌ Error deleting data: {e}")
-
-    # delete non-global characters
-    elif choice == "4":
-        dummy_vector = [0.0] * 1536
-
-        # Fetch a large number of matches to find various session IDs
-        # Note: If you have >10k vectors, you might need to run this multiple times or use pagination
-        results = index.query(vector=dummy_vector, top_k=10000, include_metadata=True)
-
-        # 3. Identify Session IDs to Delete
-        sessions_to_delete = set()
-
-        for match in results["matches"]:
-            if "metadata" in match:
-                sid = match["metadata"].get("session_id")
-                # If the session ID exists AND it is NOT the global one
-                if sid and sid != GLOBAL_SESSION_ID:
-                    sessions_to_delete.add(sid)
-
-        if not sessions_to_delete:
-            print("✅ No temporary sessions found. Database is clean!")
-            return
-
-        print(
-            f"⚠️ Found {len(sessions_to_delete)} temporary sessions to delete: {sessions_to_delete}"
-        )
-        confirm = input("Type 'DELETE' to confirm wiping these sessions: ")
-
-        if confirm != "DELETE":
             print("❌ Operation cancelled.")
-            return
 
-        # 4. Delete loop
-        for sid in sessions_to_delete:
-            print(f"🔥 Deleting session: {sid}...")
-            try:
-                index.delete(filter={"session_id": sid})
-            except Exception as e:
-                print(f"    ❌ Error deleting {sid}: {e}")
-
-        # 5. Verify
-        time.sleep(5)
-        final_stats = index.describe_index_stats()
-        print("\n✨ Cleanup Complete.")
-        print(f"📊 New Vector Count: {final_stats.total_vector_count}")
-
-    # --- OPTION 3: EXIT ---
+    # exit
     else:
         print("\n👋 Exiting.")
 

@@ -17,25 +17,26 @@ load_dotenv()
 INDEX_NAME = "project-rip"
 
 
-# CONTENT COLLECTION
-# web scrapes and cleans data to inject into db
-# Fetches the raw HTML and isolates the main article text.
+# web scrapes and cleans data to inject into db, also gets pfp image
 def rip_wiki_content(url):
-    print(f"⚡ connecting to {url}...")
+    print(f"🔍 connecting to {url}...")
 
     html_content = ""
 
-    # wikipedia: using official api
+    # GET HTML
     if "wikipedia.org" in url:
         try:
-            # 1. Parse the URL to get Language and Page Title
+            # get lang and pg title
             parsed = urlparse(url)
-            # e.g., en.wikipedia.org -> "en"
+
             lang = parsed.netloc.split(".")[0]
-            # handles path parsing
+            # in case of mobile links (i.e. m.en.wiki...)
+            if lang == "m":
+                lang = parsed.netloc.split(".")[1]
+
             page_title = unquote(parsed.path.split("/")[-1])
 
-            print(f"    📖 Detected Wikipedia API. Fetching '{page_title}' ({lang})...")
+            print(f"    🔍 Detected Wikipedia API. Fetching '{page_title}' ({lang})...")
 
             api_url = f"https://{lang}.wikipedia.org/w/api.php"
             params = {
@@ -47,7 +48,7 @@ def rip_wiki_content(url):
                 "disabletoc": 1,
             }
 
-            # PASS HEADERS HERE TO FIX 403 ERROR
+            # try to avoid 403 error and bypass wikipedia blocking
             headers = {
                 "User-Agent": "ProjectRip/1.0 mathiasnvd07@gmail.com python-requests/2.31"
             }
@@ -55,26 +56,28 @@ def rip_wiki_content(url):
             response.raise_for_status()
             data = response.json()
 
-            # print(f"response.text: {response.text}")
-
+            # error handling
             if response.status_code == 403:
-                print("❌ Wikipedia blocked the request. Check your User-Agent header.")
+                print(
+                    "    ❌ Wikipedia blocked the request. Check your User-Agent header."
+                )
                 return None, None, None
 
             if "error" in data:
-                print(f"❌ API Error: {data['error'].get('info')}")
+                print(f"    ❌ API Error: {data['error'].get('info')}")
                 return None, None, None
 
             if "parse" not in data:
-                print(f"❌ Error: API response missing 'parse' data. Raw: {data}")
+                print(f"    ❌ Error: API response missing 'parse' data. Raw: {data}")
                 return None, None, None
 
             html_content = data["parse"]["text"]["*"]
 
         except Exception as e:
-            print(f"❌ Error fetching via Wikipedia API: {e}")
+            print(f"    ❌ Error fetching via Wikipedia API: {e}")
             return None, None, None
     else:
+        # header again to avoid bot prevention
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "en-US,en;q=0.9",
@@ -83,51 +86,46 @@ def rip_wiki_content(url):
 
         try:
             response = requests.get(url, headers=headers)
-            # print(f"response.text: {response.text}")
-            response.raise_for_status()  # Crashes nicely if link is dead (404)
+            response.raise_for_status()
             html_content = response.text
         except Exception as e:
-            print(f"❌ Error fetching page: {e}")
+            print(f"    ❌ Error fetching page: {e}")
             return None, None, None
 
+    # parse html content to chunk
     soup = BeautifulSoup(html_content, "html.parser")
-    # print(f"soup.text: {soup.text}")
+
+    # get infobox facts and its profile image
     infobox_text, image_url = extract_infobox(soup)
 
     if image_url:
-        print(f"🖼️  Successfully scraped image: {image_url}")
+        print(f"    ✅ Successfully scraped image: {image_url}")
     else:
-        print("⚠️ No profile image found in infobox.")
+        print("     ⚠️ No profile image found in infobox.")
 
-    # print(f"soup.title: {soup.title.string if soup.title else 'No Title'}")
-
-    # FINDING CONTENT
-    # On Fandom Wikis, article usually inside <div class="mw-parser-output">.
-    # ignore sidebars, ads, and footers.
+    # article usually in "mw-parser-output"
     content_div = soup.find("div", {"class": "mw-parser-output"})
 
-    # text extraction
+    # TEXT EXTRACTION
     if not content_div and "wikipedia.org" in url:
         content_div = soup
 
     if not content_div:
-        # Fallback for weird Fandom layouts
-        print("    🟡 weird fandom layout. searching mw-content-text.")
+        # fallback for weird Fandom layouts
+        print("    🟡 weird fandom layout. Searching 'mw-content-text'.")
         content_div = soup.find("div", {"id": "mw-content-text"})
 
     if not content_div:
         print(
-            "❌ Could not find main content div. Page structure is unknown, try uploading a wiki page."
+            "   ❌ Could not find main content div. Page structure is unknown, try uploading a wiki page."
         )
         return None, None, None
 
     # DATA CLEANING
-    # We only want paragraphs <p>, lists <ul>, and headers <h>
-    # print(f"ℹ️infobox_text: {infobox_text}")
     clean_text = infobox_text
     section_map = []  # storing: {'start':0, 'end' :500, 'header': 'Intro'}
 
-    # for source metadata
+    # for infobox source metadata
     if infobox_text:
         section_map.append({"start": 0, "end": len(infobox_text), "header": "Infobox"})
 
@@ -143,7 +141,7 @@ def rip_wiki_content(url):
         "ul",
     ]  # add more later if needed
 
-    # IGNORE LIST: Skip these sections entirely to reduce noise
+    # ignore junk headers
     ignored_headers = [
         "See also",
         "References",
@@ -154,29 +152,26 @@ def rip_wiki_content(url):
     ]
     skip_current_section = False
 
+    # add them to acc chunks
     for element in content_div.find_all(tags_to_scrape):
         tag = element.name
         text = element.get_text(" ", strip=True)
 
-        # --- HEADER CLEANING ---
+        # header cleaning and skipping
         if tag in ["h2", "h3", "h4"]:
-            # 1. Remove [edit], [1], and empty []
-            # This regex matches anything inside brackets and removes it
+            # remove [edit], [1], and empty []
             text = re.sub(r"\[.*?\]", "", text).strip()
 
-            # 2. Check if we should skip this section
             if any(ignored in text for ignored in ignored_headers):
                 skip_current_section = True
-                continue  # Skip adding this header
+                continue
             else:
                 skip_current_section = False
 
-        # If we are in an ignored section (like References), skip this paragraph
         if skip_current_section:
             continue
 
-        # --- TEXT BODY CLEANING ---
-        # Remove citation numbers like [1], [25] from paragraphs
+        # remove citation numbers
         text = re.sub(r"\[\d+\]", "", text)
 
         if not text or len(text) < 3:
@@ -199,11 +194,11 @@ def rip_wiki_content(url):
         current_idx = end
 
     print(
-        f"✅ Successfully extracted {len(clean_text)} characters of raw text and mapped {len(section_map)} sections."
+        f"    ✅ Successfully extracted {len(clean_text)} characters of raw text and mapped {len(section_map)} sections."
     )
 
     if not clean_text:
-        print("⚠️ Content div found but no extracted text")
+        print("    ⚠️ Content div found but no extracted text")
 
     return clean_text, section_map, image_url
 
@@ -212,33 +207,30 @@ def rip_wiki_content(url):
 def extract_infobox(soup):
     infobox_text = ""
 
-    # 1. Find the Infobox (Wikipedia uses .infobox, Fandom uses .portable-infobox)
+    # wikipedia uses .infobox, fandom uses .portable-infobox
     infobox = soup.find("table", class_=lambda x: x and "infobox" in x)
     if not infobox:
         infobox = soup.find("aside", {"class": "portable-infobox"})
 
     if infobox:
-        # --- IMAGE EXTRACTION ---
-
+        # IMAGE PFP EXTRACTION
         img_tag = infobox.find("img", {"class": "pi-image-thumbnail"})
 
-        # PRIORITY 2: Semantic wrappers (view-image / infobox-image)
-        # This is standard for Wikipedia and some Fandom layouts
+        # usually for wikipedia and some fandom
         if not img_tag:
             wrapper = infobox.find(class_=["infobox-image", "view-image", "image"])
             if wrapper:
                 img_tag = wrapper.find("img")
 
-        # PRIORITY 3: The generic "mw-file-element" (The Risky One)
-        # We only check this if the specific ones above failed.
+        # some fandoms use this
         if not img_tag:
             img_tag = infobox.find("img", {"class": "mw-file-element"})
 
-        # PRIORITY 4: Last Resort
+        # last resort
         if not img_tag:
             img_tag = infobox.find("img")
 
-        # Extract & Clean URL
+        # clean url
         if img_tag and img_tag.get("src"):
             raw_src = img_tag["src"]
 
@@ -250,14 +242,13 @@ def extract_infobox(soup):
 
             image_url = raw_src
 
-        # TEXT EXTRACTION
         infobox_text += "== QUICK FACTS (Infobox) ==\n"
 
-        # WIKIPEDIA STYLE (Rows with th/td)
+        # go through wikipedia infobox
         rows = infobox.find_all("tr")
         for row in rows:
-            th = row.find("th")  # Header (Key)
-            td = row.find("td")  # Data (Value)
+            th = row.find("th")  # header
+            td = row.find("td")  # data
 
             if th and td:
                 key = th.get_text(" ", strip=True)
@@ -268,14 +259,14 @@ def extract_infobox(soup):
 
                 infobox_text += f"{key}: {val}\n"
 
-            # Handle section headers inside infobox (e.g. "Personal details")
+            # handle section headers
             elif th and not td:
                 header_text = th.get_text(" ", strip=True)
                 if len(header_text) > 2:
                     infobox_text += f"\n--- {header_text} ---\n"
 
-        # FANDOM STYLE (divs)
-        if not rows:  # If no table rows found, try Fandom structure
+        # fandom
+        if not rows:
             for item in infobox.find_all("div", {"class": "pi-item"}):
                 label = item.find("h3", {"class": "pi-data-label"})
                 value = item.find("div", {"class": "pi-data-value"})
@@ -286,24 +277,22 @@ def extract_infobox(soup):
 
         infobox_text += "\n\n"
 
-        # 2. Decompose (delete) the infobox from soup so the main loop doesn't scrape it again
+        # delete infobox from soup so it isn't scraped again
         infobox.decompose()
 
     return infobox_text, image_url
 
 
-# CHUNKING
-# nlp pre-processing: splits long txt into chunks for vector db
+# CHUNKING: splits long txt into chunks for vector db
 def chunk_text(
     raw_text, section_map, source_url, character_name, session_id, image_url
 ):
     print("🔪 Chunking text...")
 
     # splits Paragraph by (\n\n) first, then Sentence (.), then Word.
-    # This prevents cutting a sentence in half, which confuses the AI.
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2000,  # ~200-300 words per chunk, longer better for narrative context?
-        chunk_overlap=400,  # Overlap ensures context flows across chunks
+        chunk_size=2000,  # ~200-300 words per chunk, longer for narrative context
+        chunk_overlap=400,  # larger -> more context flows across chunks
         separators=["\n\n", "\n", ".", " ", ""],
     )
 
@@ -339,24 +328,11 @@ def chunk_text(
             "character": character_name,
             "source": source_url,
             "section": dominant_section,
-            "session_id": session_id,  # change to "demo_roster" to upload global characters; in future, would need to make this id secret
+            "session_id": session_id,  # change to "demo_roster" to upload global chars
             "image_url": image_url or "",
         }
 
-        # # find all sections that touch this chunk
-        # found_sections = []
-        # for entry in section_map:
-        #     if entry["start"] < end_idx and entry["end"] > start_idx:
-        #         found_sections.append(entry["header"])
-
-        # chunk_sections = list(dict.fromkeys(found_sections))
-
-        # if not chunk_sections:
-        #     chunk_sections = ["Unknown"]
-
-        # chunk.metadata = {"source": source_url, "section": chunk_sections}
-
-    print(f"✅ Split text into {len(chunks)} vector-ready chunks.")
+    print(f"    ✅ Split text into {len(chunks)} vector-ready chunks.")
     return chunks
 
 
@@ -376,13 +352,13 @@ def check_if_url_exists(url, session_id):
         )
 
         if len(results) > 0:
-            print(f"    ✅ Found existing match! (Score: {results[0][1]})")
+            print(f"    ✅ Exists (Score: {results[0][1]})")
             return True
 
         print("    🟡 No match found in DB.")
         return False
     except Exception as e:
-        print(f"🔴 Error checking URL existence: {e}")
+        print(f"    🔴 Error checking URL existence: {e}")
         return False
 
 
@@ -395,11 +371,11 @@ def ingest_to_pinecone(chunks):
     print(f"🚀 Uploading {len(chunks)} chunks to Pinecone index '{INDEX_NAME}'...")
 
     try:
-        # # uploads to pinecone (sends chunks to openai to get vectors and forwards to pinecone)
+        # uploads to pinecone (sends chunks to openai to get vectors and forwards to pinecone)
         vectorStore.add_documents(documents=chunks)
-        print("✅ Success! Data is now live in the Vector Database.")
+        print("    ✅ Success! Data is now live in the Vector Database.")
     except Exception as e:
-        print(f"❌ Upload failed: {e}")
+        print(f"    ❌ Upload failed: {e}")
 
 
 # MAIN (exported) FUNCTION
@@ -411,12 +387,12 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
         return "⚠️ Error: No Session ID provided.", None
 
     if not character_name:
-        character_name = "Unknown Character"  # add counter for num of characters
+        character_name = "Unknown Character"
 
+    # clean url to avoid duplicates
     parsed = urlparse(url)
     clean_url = urlunparse(parsed._replace(fragment="")).rstrip("/")
 
-    # Debug: Show user what happened
     if url != clean_url:
         print(f"🧹 Normalized URL: '{url}' -> '{clean_url}'")
 
@@ -447,10 +423,9 @@ def ingest_fandom_wiki(url, character_name, session_id, traffic_source):
     if not final_chunks:
         return "❌ Failed to create chunks", None
 
-    print("\n--- METADATA (preview): ---")
+    print("\nMETADATA[:5]: ")
     for i in range(min(5, len(final_chunks))):
         print(f"Chunk {i} | Section: '{final_chunks[i].metadata['section'][0:20]}...'")
-        # print(f"Preview: {final_chunks[i].page_content[:50]}...\n")
     print("----------------------\n")
 
     ingest_to_pinecone(final_chunks)

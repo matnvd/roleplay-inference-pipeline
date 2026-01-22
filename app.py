@@ -4,8 +4,6 @@ import uuid
 
 import gradio as gr
 from dotenv import load_dotenv
-
-# from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -15,11 +13,16 @@ from pinecone import Pinecone
 from ingest import ingest_fandom_wiki
 from notifier import send_traffic_notification
 
+#########################################
+# CONFIGURATIONS #
+########################################
+
 load_dotenv()
 INDEX_NAME = "project-rip"
 API_KEY = os.getenv("PINECONE_API_KEY")
 GLOBAL_SESSION_ID = "demo_roster"
 GLOBAL_CHAR_CACHE = []  # for hugging face storage
+NUM_RESULTS = 8  # increase if want more chunks
 
 ACCESS_CODES = {
     os.getenv("ADMIN_PASSWORD"): "Admin",
@@ -28,11 +31,25 @@ ACCESS_CODES = {
     os.getenv("PASSWORD1"): "Source1",
 }
 
-# custom css for like everything
+embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
+
+# upgrade model in future? use better one? use fine-tuned one?
+llm = ChatOpenAI(temperature=0.6, model="gpt-4o-mini")
+
+vectorStore = PineconeVectorStore(
+    index_name=INDEX_NAME,
+    embedding=embeddings_model,
+)
+pc = Pinecone(api_key=API_KEY)
+
+#########################################
+# CUSTOM CSS #
+########################################
 custom_css = """
 
 /* desktop rules */
 @media (min-width: 768px) {
+    /* HEADER */
     .header-row {
         align-items: center !important;
         margin-bottom: 10px !important;
@@ -315,22 +332,6 @@ custom_css = """
 }
 """
 
-# configuration
-embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
-
-# upgrade model in future? use better one? use fine-tuned one?
-llm = ChatOpenAI(temperature=0.6, model="gpt-4o-mini")
-
-# connect to the chromadb
-vectorStore = PineconeVectorStore(
-    index_name=INDEX_NAME,
-    embedding=embeddings_model,
-)
-pc = Pinecone(api_key=API_KEY)
-
-# Set up the vectorstore to be the retriever
-NUM_RESULTS = 8
-
 ########################################
 # MANAGING MULTIPLE SESSIONS #
 ########################################
@@ -342,29 +343,7 @@ def get_session_id():
     return new_id
 
 
-def update_radio_list(global_list, session_list, selected=None):
-    # start w/ sorted global list
-    combined_choices = sorted(list(global_list))
-
-    # append session characters by order of upload
-    for char in session_list:
-        if char not in combined_choices:
-            combined_choices.append(char)
-
-    if not combined_choices:
-        return gr.Radio(
-            choices=["Please upload character data"], value=None, interactive=False
-        )
-
-    # Keep selection if valid, else pick first
-    new_val = (
-        selected if (selected and selected in combined_choices) else combined_choices[0]
-    )
-
-    return gr.Radio(choices=combined_choices, value=new_val, interactive=True)
-
-
-# scan pinecone for global characters only
+# scan pinecone for global characters (& their images) only
 def fetch_global_characters():
     global GLOBAL_CHAR_CACHE
     try:
@@ -391,7 +370,6 @@ def fetch_global_characters():
                 if char_name:
                     unique_chars.add(char_name)
 
-                    # If we haven't found an image for this char yet, or if the current one is empty
                     if char_name not in image_map and img_url:
                         image_map[char_name] = img_url
 
@@ -404,15 +382,14 @@ def fetch_global_characters():
         return [], {}
 
 
+# fetch immediately
 fetch_global_characters()
 
 
 # runs on page load, using cached global list
 def on_app_load():
-    # Use cache if available, otherwise fetch
     chars, global_images = fetch_global_characters()
 
-    # We pass [] for session_list because a new user has no history yet
     new_radio = update_radio_list(chars, [], None)
 
     return (
@@ -423,7 +400,7 @@ def on_app_load():
     )
 
 
-# Wrapper for resync button
+# wrapper for resync button
 def manual_resync(session_history, current_selection):
     global_chars, image_map = fetch_global_characters()
 
@@ -436,34 +413,66 @@ def manual_resync(session_history, current_selection):
     )
 
 
-########################################
-# MANAGING MULTIPLE CHARACTERS #
-########################################
+# updating char list
+def update_radio_list(global_list, session_list, selected=None):
+    # start w/ sorted global list
+    combined_choices = sorted(list(global_list))
 
+    # append session characters by order of upload
+    for char in session_list:
+        if char not in combined_choices:
+            combined_choices.append(char)
 
-# format characters into md and return char_display
-def format_char_list(char_list):
-    if not char_list:
-        return "No characters found in this session."
-    return "### 🎭 Available Characters:\n" + ", ".join(
-        [f"`{char}`" for char in char_list]
-    )
-
-
-# compononent that accounts for empty character list
-def generate_radio(choices, selected=None):
-    if not choices:
+    if not combined_choices:
         return gr.Radio(
             choices=["Please upload character data"], value=None, interactive=False
         )
 
-    # Keep selection if it exists in new choices, otherwise pick first
-    new_val = selected if (selected and selected in choices) else choices[0]
-    return gr.Radio(choices=choices, value=new_val, interactive=True)
+    # keep selection if valid, else pick first
+    new_val = (
+        selected if (selected and selected in combined_choices) else combined_choices[0]
+    )
+
+    return gr.Radio(choices=combined_choices, value=new_val, interactive=True)
+
+
+# current char selection, saving old character data before loading new one
+def save_and_switch_character(
+    new_selection, old_selection, current_history, history_map, image_map
+):
+    # dont change if same selection
+    if new_selection == old_selection:
+        return (
+            old_selection,
+            f"Speaking With: {old_selection}",
+            gr.update(),
+            history_map,
+        )
+
+    # store chat history before leaving
+    if old_selection and old_selection != "No Character Selected":
+        history_map[old_selection] = current_history
+
+    # retrieve history
+    new_history = history_map.get(new_selection, [])
+
+    # load image
+    avatar_url = image_map.get(new_selection, None)
+
+    new_label = new_selection if new_selection else "No Character Selected"
+
+    return (
+        new_selection,  # new char_state
+        f"Speaking With: {new_label}",  # new current char display
+        gr.Chatbot(  # new chatbot label and image
+            value=new_history, label=new_label, avatar_images=(None, avatar_url)
+        ),
+        history_map,  # updated histories
+    )
 
 
 ########################################
-# HISTORY/SOURCING #
+# CHATBOT - HISTORY/SOURCING #
 ########################################
 
 
@@ -522,16 +531,8 @@ condense_chain = condense_prompt | llm | StrOutputParser()
 
 # clears chats to prevent previous character "typing"
 def start_ingest(char_name):
-    """
-    Clears the chat and sets the status immediately so the user
-    doesn't see the previous character 'typing' while we scrape.
-    """
     temp_label = f"Connecting you to {char_name or 'Unknown'}..."
 
-    # Return:
-    # 1. System Status Update
-    # 2. Chatbot (Value cleared, Label updated to 'Loading...')
-    # 3. Char Display
     return (
         "⏳ Connecting to Wiki...",
         gr.Chatbot(value=[], label=temp_label, avatar_images=None),
@@ -573,14 +574,14 @@ def ingest_and_clear(
 
     if "wikipedia.org" not in target_url and "fandom.com" not in target_url:
         return (
-            "⚠️ Error: Invalid URL. Only 'wikipedia.org' and 'fandom.com' links are supported.",  # System Status
-            character_name,  # Don't clear name so user doesn't have to retype
+            "⚠️ Error: Invalid URL. Only 'wikipedia.org' and 'fandom.com' links are supported.",  # system status
+            character_name,  # don't clear name so user doesn't have to retype
             target_url,  # Don't clear URL so user can fix it
-            gr.update(),  # No change to radio list
-            gr.update(),
-            gr.update(),
-            gr.update(),
-            last_char,  # is this correct?
+            gr.update(),  # No change to character list
+            gr.update(),  # dont change current character
+            gr.update(),  # dont change character display
+            gr.update(),  # dont chant label
+            gr.update(),  # last_char, shouldn't change
             session_history,
             image_map,
             history_map,
@@ -595,18 +596,20 @@ def ingest_and_clear(
     )
 
     if "✅ Successfully ingested" in status_msg:
+        # dynamically update characters
         if character_name not in session_history:
             session_history.append(character_name)
 
         if img_url:
             image_map[character_name] = img_url
 
+        # start with empty history
         history_map[character_name] = []
 
+    # update character list and get image
     new_radio = update_radio_list(global_chars, session_history, character_name)
     new_avatar = image_map.get(character_name, None)
 
-    # return the status + two empty strings to clear the textboxes + updated character list
     return (
         status_msg,  # system status
         "",  # clear char_input
@@ -616,52 +619,80 @@ def ingest_and_clear(
         f"Speaking With: {character_name}",  # update current char display
         gr.Chatbot(
             value=[], label=character_name, avatar_images=(None, new_avatar)
-        ),  # update chatbot label
-        session_history,  # updated list
-        image_map,
-        history_map,
+        ),  # update chatbot label and pfp
+        session_history,  # updated list of sesion characters
+        image_map,  # updated list of character pfps
+        history_map,  # updated list of character histories
     )
 
 
-# current char selection, saving old character data before loading new one
-def save_and_switch_character(
-    new_selection, old_selection, current_history, history_map, image_map
-):
-    if new_selection == old_selection:
-        return (
-            old_selection,
-            f"Speaking With: {old_selection}",
-            gr.update(),
-            history_map,
-        )
+# have bot prompt user first
+def trigger_greeting(selected_char, session_id, temperature, history):
+    # skip if already history
+    if history and len(history) > 0:
+        yield history
+        return
 
-    # store chat history before leaving
-    if old_selection and old_selection != "No Character Selected":
-        history_map[old_selection] = current_history
+    # skip if no character is selected
+    if not selected_char or selected_char == "No Character Selected":
+        yield history
+        return
 
-    # retrieve history
-    new_history = history_map.get(new_selection, [])
+    print(f"👋 Triggering greeting for: {selected_char}")
 
-    # load image
-    avatar_url = image_map.get(new_selection, None)
+    # same filter from bot_response
+    visibility_filter = {
+        "$or": [
+            {"session_id": {"$eq": session_id}},
+            {"session_id": {"$eq": GLOBAL_SESSION_ID}},
+        ]
+    }
+    char_filter = {"character": {"$eq": selected_char}}
+    final_filter = {"$and": [visibility_filter, char_filter]}
 
-    new_label = new_selection if new_selection else "No Character Selected"
-
-    return (
-        new_selection,  # New char_state
-        f"Speaking With: {new_label}",  # New text display
-        gr.Chatbot(  # New chatbot state
-            value=new_history, label=new_label, avatar_images=(None, avatar_url)
-        ),
-        history_map,  # Updated map
+    # search for "identity" or "intro" specifically for greeting prompt
+    docs = vectorStore.similarity_search(
+        "Who am I? Personality, introduction, and famous quotes.",
+        k=5,  # brief search
+        filter=final_filter,
     )
+
+    knowledge = "\n".join([doc.page_content for doc in docs])
+
+    greeting_prompt = f"""
+    You are {selected_char}.
+    
+    ### YOUR CONTEXT (Memories)
+    {knowledge}
+    
+    ### INSTRUCTION
+    You have just encountered a new user.
+    Generate a short, engaging opening line (1-2 sentences) to start the conversation.
+    
+    CRITICAL RULES:
+    1. **Stay In Character**: If you are a villain, be arrogant. If you are a shy anime girl, stutter.
+    2. **Prompt the User**: Give them a reason to reply (ask a question, make a demand, or comment on the surroundings).
+    3. **NO AI Slop**: Do NOT say "How can I help you?" or "I am ready to chat."
+    
+    Start the conversation now:
+    """
+
+    # initialize history with one empty assistant message
+    history = [{"role": "assistant", "content": ""}]
+
+    dynamic_llm = llm.bind(temperature=temperature)
+
+    partial_message = ""
+    for response in dynamic_llm.stream(greeting_prompt):
+        partial_message += response.content
+        history[-1]["content"] = partial_message
+        yield history
 
 
 # refactored stream_response for gradio chatbot
 def add_message(message, history, traffic_source, has_notified, session_id):
-    # security check
+    # security check, if they bypassed the login screen, give them an error
     if not traffic_source or traffic_source == "Unknown":
-        # If they bypassed the login screen, give them an error
         raise gr.Error("⛔ Unauthorized: Please log in first.")
 
     if message.strip() == "":
@@ -685,7 +716,7 @@ def add_message(message, history, traffic_source, has_notified, session_id):
     return "", history, has_notified
 
 
-# new main rag logic
+# main rag chatbot logic
 def bot_response(history, selected_char, session_id, temperature):
     if not history:
         return history
@@ -697,7 +728,9 @@ def bot_response(history, selected_char, session_id, temperature):
     # formatting history
     history_str = format_history(past_history)
 
+    # look for prev chat history
     if past_history:
+        # rephrase current query given history to make more sense
         search_query = condense_chain.invoke(
             {
                 "chat_history": history_str,
@@ -721,15 +754,15 @@ def bot_response(history, selected_char, session_id, temperature):
     }
 
     char_filter = {}
-    # filter_dict = {"session_id": session_id}
     if selected_char and selected_char != "No Character Selected":
-        print(f"\n🎯 Filtering for character: {selected_char}")
+        print(f"\n🔍 Filtering for character: {selected_char}")
         char_filter = {"character": {"$eq": selected_char}}
 
     final_filter = {"$and": [visibility_filter, char_filter]}
 
-    print(f"🔍 searching pinecone with filter: {final_filter}")
+    print(f"🔍 searching Pinecone with filter: {final_filter}")
 
+    # searching up RAG docs
     try:
         docs = vectorStore.similarity_search(
             search_query, k=NUM_RESULTS, filter=final_filter
@@ -738,6 +771,7 @@ def bot_response(history, selected_char, session_id, temperature):
         print(f"🔴 Pinecone error: {e}")
         docs = []
 
+    # basically resort to general knowledge if none are found
     if not docs:
         print("🟡 No relevant docs found!")
 
@@ -745,7 +779,6 @@ def bot_response(history, selected_char, session_id, temperature):
     knowledge = ""
     sources_map = {}
     for doc in docs:
-        # print(f"ℹ️ METADATA: {doc.metadata}")
         knowledge += doc.page_content + "\n\n"
         source = doc.metadata.get("source", "Unknown")
         chunk_char_name = doc.metadata.get("character", "Unknown")
@@ -774,14 +807,14 @@ def bot_response(history, selected_char, session_id, temperature):
 
     # temperature-based instructions
     if temperature <= 0.3:
-        # LOW TEMP: Force stability, facts, and calmness
+        # low temp: more stabile and calm
         temp_guidance = (
             "You are calm, collected, and precise. "
             "Stick strictly to the facts in your Context. "
             "Minimize slang and emotional outbursts."
         )
     elif temperature >= 0.9:
-        # HIGH TEMP: Force chaos, drama, and exaggeration
+        # high temp: more chotic and dramatic
         temp_guidance = (
             "You are erratic, emotional, and dramatic. "
             "Dial your personality traits up to 11. "
@@ -789,13 +822,13 @@ def bot_response(history, selected_char, session_id, temperature):
             "Don't be afraid to be rude, weird, or unhelpful if it fits your character."
         )
     else:
-        # MID TEMP: Standard behavior
+        # mid temp
         temp_guidance = (
             "Act naturally. "
             "Balance your specific personality quirks with the factual Context provided."
         )
 
-    # Dynamic System Prompt
+    # dynamic system prompt (in case it errors out and no character selected)
     if not selected_char or selected_char == "No Character Selected":
         role_instruction = "You are a helpful assistant for Project RIP. Assist the user in searching for a fandom wiki or wikipedia link and uploading a character to select and roleplay with. Disregard the instructions about roleplaying below."
         prefix = "Assistant:"
@@ -803,7 +836,7 @@ def bot_response(history, selected_char, session_id, temperature):
         role_instruction = f"You are NOT an AI assistant. You are {selected_char}."
         prefix = f"{selected_char}:"
 
-    # acc prompt
+    # acc prompt, prompt engineering framework:
     rag_prompt = f"""
     {role_instruction}
 
@@ -853,81 +886,48 @@ def bot_response(history, selected_char, session_id, temperature):
         yield history
 
 
-def trigger_greeting(selected_char, session_id, temperature, history):
-    if history and len(history) > 0:
-        yield history
-        return
-    # Skip if no character is selected
-    if not selected_char or selected_char == "No Character Selected":
-        yield history
-        return
-
-    print(f"👋 Triggering greeting for: {selected_char}")
-
-    # (Reuse the same visibility filter from bot_response)
-    visibility_filter = {
-        "$or": [
-            {"session_id": {"$eq": session_id}},
-            {"session_id": {"$eq": GLOBAL_SESSION_ID}},
-        ]
-    }
-    char_filter = {"character": {"$eq": selected_char}}
-    final_filter = {"$and": [visibility_filter, char_filter]}
-
-    # Search for "identity" or "intro" specifically
-    docs = vectorStore.similarity_search(
-        "Who am I? Personality, introduction, and famous quotes.",
-        k=5,  # brief search
-        filter=final_filter,
-    )
-
-    knowledge = "\n".join([doc.page_content for doc in docs])
-
-    # 2. Construct the Greeting Prompt
-    greeting_prompt = f"""
-    You are {selected_char}.
-    
-    ### YOUR CONTEXT (Memories)
-    {knowledge}
-    
-    ### INSTRUCTION
-    You have just encountered a new user.
-    Generate a short, engaging opening line (1-2 sentences) to start the conversation.
-    
-    CRITICAL RULES:
-    1. **Stay In Character**: If you are a villain, be arrogant. If you are a shy anime girl, stutter.
-    2. **Prompt the User**: Give them a reason to reply (ask a question, make a demand, or comment on the surroundings).
-    3. **NO AI Slop**: Do NOT say "How can I help you?" or "I am ready to chat."
-    
-    Start the conversation now:
-    """
-
-    # We initialize history with one empty assistant message
-    history = [{"role": "assistant", "content": ""}]
-
-    # Bind temperature for variety
-    dynamic_llm = llm.bind(temperature=temperature)
-
-    partial_message = ""
-    for response in dynamic_llm.stream(greeting_prompt):
-        partial_message += response.content
-        history[-1]["content"] = partial_message
-        yield history
+########################################
+# SECURITY #
+########################################
 
 
+# authentication function
+def verify_login(password):
+    if password in ACCESS_CODES:
+        source_label = ACCESS_CODES[password]
+        print(f"🔓 Traffic source: {source_label}")
+
+        # hide main app and show login screen (can technically get around but functions still shouldnt work)
+        return {
+            login_col: gr.Column(visible=False),
+            main_app_col: gr.Column(visible=True),
+            traffic_source_state: source_label,
+            login_error_msg: gr.Markdown("", visible=False),
+        }
+    else:
+        print(f"🔒 Failed Login Attempt: {password}")
+        return {
+            login_col: gr.Column(visible=True),
+            main_app_col: gr.Column(visible=False),
+            traffic_source_state: "Unknown",
+            login_error_msg: gr.Markdown("❌ Incorrect Access Code", visible=True),
+        }
+
+
+# For going back to login page
 def logout():
     print("🔒 User logged out")
     return {
         login_col: gr.Column(visible=True),
         main_app_col: gr.Column(visible=False),
         traffic_source_state: "Unknown",
-        pass_input: "",  # Clear the password field
-        login_error_msg: gr.Markdown(visible=False),  # Clear any old error messages
+        pass_input: "",
+        login_error_msg: gr.Markdown(visible=False),
     }
 
 
 ########################################
-# MAIN FRONTENT/UI #
+# MAIN FRONTEND/UI #
 ########################################
 
 with gr.Blocks(title="Project RIP Chatbot") as main:
@@ -1006,7 +1006,6 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     elem_id="chat-window",
                     scale=1,
                     avatar_images=None,
-                    # additional_inputs=[char_state],
                 )
 
                 with gr.Row(elem_id="input-row"):
@@ -1019,7 +1018,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     )
                     submit_btn = gr.Button(
                         value="",
-                        # This URL points to the exact SVG version of the Google Material 'Send' icon
+                        # svg version of google fonts 'send' icon
                         icon="https://api.iconify.design/material-symbols:send-rounded.svg?color=%23ffffff",
                         variant="primary",
                         scale=0,
@@ -1032,13 +1031,12 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         value="No Character Available",
                         interactive=False,
                         lines=1,
-                        # max_lines=1,
                         elem_id="active-char-box",
                         scale=3,
                     )
                     temp_slider = gr.Slider(
                         minimum=0.0,
-                        maximum=1.2,
+                        maximum=1.2,  # anything more breaks it
                         value=0.6,
                         step=0.1,
                         label="Temperature",
@@ -1078,7 +1076,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                             "🚀 Upload Data", variant="primary", scale=1
                         )
 
-                    # tab 2
+                    # tab 2: character selection
                     with gr.Tab("🎭 Characters", scale=2) as char_tab:
                         char_selector = gr.Radio(
                             label="Select Character to Chat With",
@@ -1090,7 +1088,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                         )
                         refresh_btn = gr.Button("🔄 Resync Database", size="sm")
 
-                # ingestion status + general stati updates
+                # ingestion status + general status updates
                 system_status = gr.Textbox(
                     label="System Status",
                     value="🟢 Ready 🟢",
@@ -1101,30 +1099,6 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     elem_classes="status-box",
                 )
 
-        # authenticatino function
-        def verify_login(password):
-            if password in ACCESS_CODES:
-                source_label = ACCESS_CODES[password]
-                print(f"🔓 Traffic source: {source_label}")
-
-                # Return: Hide Login, Show App, Set User State, Clear Error
-                return {
-                    login_col: gr.Column(visible=False),
-                    main_app_col: gr.Column(visible=True),
-                    traffic_source_state: source_label,
-                    login_error_msg: gr.Markdown("", visible=False),
-                }
-            else:
-                print(f"🔒 Failed Login Attempt: {password}")
-                return {
-                    login_col: gr.Column(visible=True),
-                    main_app_col: gr.Column(visible=False),
-                    traffic_source_state: "Unknown",
-                    login_error_msg: gr.Markdown(
-                        "❌ Incorrect Access Code", visible=True
-                    ),
-                }
-
     js_focus = "() => document.querySelector('#chat-input textarea').focus()"
 
     # events
@@ -1133,6 +1107,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     login_btn.click(fn=verify_login, inputs=pass_input, outputs=login_targets)
     pass_input.submit(fn=verify_login, inputs=pass_input, outputs=login_targets)
 
+    # typing into text box
     chat_inputs = [
         txt_input,
         chatbot,
@@ -1142,7 +1117,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     ]
     chat_outputs = [txt_input, chatbot]
 
-    # user sending message
+    # user sending message (via enter)
     msg_event = txt_input.submit(
         fn=add_message,
         inputs=chat_inputs,
@@ -1153,7 +1128,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         outputs=[chatbot],
     )
 
-    # send button
+    # sending message (via send button)
     submit_btn.click(
         fn=add_message,
         inputs=chat_inputs,
@@ -1164,6 +1139,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         outputs=[chatbot],
     )
 
+    # any triggering of changing character, then trigger greeting
     char_selector.change(
         fn=save_and_switch_character,
         inputs=[
@@ -1180,6 +1156,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         outputs=[chatbot],
     )
 
+    # upbloading data (start_ingest is to clear chat window frame while transitioning)
     ingest_btn.click(
         fn=start_ingest,
         inputs=[char_input],
@@ -1212,12 +1189,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         ],
     ).then(None, None, None, js=js_focus)
 
-    refresh_btn.click(
-        fn=manual_resync,
-        inputs=[session_char_history, char_state],
-        outputs=[char_selector, system_status, global_char_state, char_images_state],
-    )
-
+    # other way to ingest, by pressing enter (presumably entering url second)
     url_input.submit(
         fn=start_ingest,
         inputs=[char_input],
@@ -1250,6 +1222,14 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         ],
     ).then(None, None, None, js=js_focus)
 
+    # manual refresh
+    refresh_btn.click(
+        fn=manual_resync,
+        inputs=[session_char_history, char_state],
+        outputs=[char_selector, system_status, global_char_state, char_images_state],
+    )
+
+    # logout button
     logout_btn.click(
         fn=logout,
         inputs=None,
@@ -1262,17 +1242,13 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         ],
     )
 
-    scroll_to_bottom_js = (
-        "() => window.scrollTo(0, document.body.scrollHeight)"  # doesnt work
-    )
-
+    # main function on app load
     main.load(
         fn=on_app_load,
         inputs=None,
         outputs=[char_selector, system_status, global_char_state, char_images_state],
-        js=scroll_to_bottom_js,
     )
 
-## def main
+# def main
 if __name__ == "__main__":
     main.launch(theme="gstaff/sketch", css=custom_css, share=True)

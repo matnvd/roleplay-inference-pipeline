@@ -15,12 +15,11 @@ def send_upload_notification(character_name, source_url, session_id):
         return
 
     payload = {
-        "username": "Project RIP Ingestion Bot",
-        # "avatar_url": "https://cdn-icons-png.flaticon.com/512/2040/2040504.png",
+        "username": "Project RIP Notifier Bot",
         "embeds": [
             {
                 "title": "🚀 New Character Uploaded!",
-                "color": 5763719,  # Green color code
+                "color": 5763719,  # green
                 "fields": [
                     {"name": "🎭 Character", "value": character_name, "inline": True},
                     {
@@ -51,7 +50,6 @@ def send_traffic_notification(traffic_source, session_id):
 
     payload = {
         "username": "Project RIP Ingestion Bot",
-        # "avatar_url": "https://cdn-icons-png.flaticon.com/512/2040/2040504.png",
         "embeds": [
             {
                 "title": "🔓 New Login Alert!",
