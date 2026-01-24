@@ -1054,6 +1054,8 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
             """
         )
 
+        login_error_msg = gr.Markdown("", visible=False)
+
         embed_html = """
         <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
             <iframe width="644" height="400" 
@@ -1067,8 +1069,6 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         """
 
         gr.HTML(embed_html, elem_id="login-demo-video")
-
-        login_error_msg = gr.Markdown("", visible=False)
 
     # main app col
     with gr.Column(elem_id="main-app", visible=False) as main_app_col:
