@@ -504,7 +504,7 @@ def on_app_load():
 
     return (
         new_radio,
-        f"🟢 Ready. Loaded {len(chars)} characters.",
+        f"🟢 Ready. Loaded {len(chars)} local and global characters.",
         chars,
         global_images,
     )
