@@ -29,6 +29,7 @@ ACCESS_CODES = {
     os.getenv("RESUME_PASSWORD"): "Resume",
     os.getenv("FRIENDS_PASSWORD"): "Friends",
     os.getenv("FAMILY_PASSWORD"): "Family",
+    os.getenv("PASSWORD0"): "Source0",
     os.getenv("PASSWORD1"): "Source1",
     os.getenv("PASSWORD2"): "Source2",
     os.getenv("PASSWORD3"): "Source3",
