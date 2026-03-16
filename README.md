@@ -7,7 +7,7 @@ The project addresses the current issues of inaccurate character portrayal, espe
 
 On the inference side, I built a system prompt framework that works to enforce strict character and source-retrieval constraints, persistent memory for context retention, and the ability to generate and demarcate between multiple characters and their sources. 
 
-Live Demo (Watch the demo or try it if you have an access key! ...I don't have unlimited API credits): 
+Live Demo (Watch the demo or try it if you have an access key (should be found on my resume, in this project description)! ...I don't have unlimited API credits): 
 https://huggingface.co/spaces/mathiasnvd/project-rip
 
 Video Demo:
