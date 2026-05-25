@@ -160,7 +160,16 @@ custom_css = """
     .gradio-container {
         min-height: 100vh !important;
         height: auto !important;
-        overflow-y: auto !important; /* Enable scrolling */
+        overflow-y: auto !important;
+        padding: 0 !important;
+        margin-top: 0 !important;
+    }
+
+    .gradio-container .main,
+    .gradio-container .wrap,
+    .gradio-container .contain {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
     }
 
     /* MAIN APP WRAPPER */
@@ -276,6 +285,23 @@ custom_css = """
     #login-row input:focus {
         border-color: var(--color-accent) !important;
         background-color: rgba(82, 82, 82, 0.3) !important;
+    }
+
+    /* INFO SCREEN */
+    #info-screen {
+        max-width: 1200px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        padding-top: 20px !important;
+    }
+
+    #info-screen .block,
+    #info-screen .form,
+    #info-screen .wrap {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
 
     /* login video */
@@ -1025,16 +1051,14 @@ def verify_login(password):
         }
 
 
-# For going back to login page
-def logout():
-    print("🔒 User logged out")
-    return {
-        login_col: gr.Column(visible=True),
-        main_app_col: gr.Column(visible=False),
-        traffic_source_state: "Unknown",
-        pass_input: "",
-        login_error_msg: gr.Markdown(visible=False),
-    }
+# Show info/about screen
+def show_info():
+    return gr.Column(visible=True), gr.Column(visible=False)
+
+
+# Return to main app
+def back_to_chat():
+    return gr.Column(visible=False), gr.Column(visible=True)
 
 
 ########################################
@@ -1045,7 +1069,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     # generate unique session id on load
     session_state = gr.State(get_session_id)
     login_tracker_state = gr.State(False)
-    traffic_source_state = gr.State("Unknown")
+    traffic_source_state = gr.State("Public")
 
     # stores global chars fetched from db
     global_char_state = gr.State([])
@@ -1059,7 +1083,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
     chat_history_map = gr.State({})
 
     # custom login screen (instead of default auth)
-    with gr.Column(elem_id="login-screen", visible=True) as login_col:
+    with gr.Column(elem_id="login-screen", visible=False) as login_col:
         gr.Markdown(
             """
             # 🔒 Project RIP Access
@@ -1111,13 +1135,61 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
         gr.HTML(embed_html, elem_id="login-demo-video")
 
+    # info screen (shown when user clicks the info button)
+    with gr.Column(elem_id="info-screen", visible=False) as info_col:
+        with gr.Row(elem_classes=["header-row"]):
+            with gr.Column(scale=8):
+                gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
+            back_btn = gr.Button(
+                "← Back to Chat", size="sm", variant="secondary", scale=1, min_width=100
+            )
+
+        gr.Markdown(
+            """
+            A RAG-powered chatbot that lets you roleplay with any character from Wikipedia or Fandom Wiki.
+            Upload a character's wiki page, and the AI will embody them using retrieved memories from the source.
+            """,
+            elem_classes=["prose"],
+        )
+
+        gr.HTML(
+            """
+            <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                <iframe width="644" height="400"
+                    src="https://www.youtube.com/embed/2Y4AmMF2oZM?si=hF2Go23ietXc0V5t"
+                    title="YouTube video player"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen
+                    style="border-radius: 12px;">
+                </iframe>
+            </div>
+            """,
+            elem_id="login-demo-video",
+        )
+
+        gr.HTML(
+            """
+            <div style="text-align: center; margin-top: 20px; font-size: 1.1em;">
+                <a href="https://github.com/matnvd/roleplay-inference-pipeline" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-right: 15px;">
+                    📂 GitHub Repository
+                </a>
+
+                <span style="color: gray;">|</span>
+
+                <a href="mailto:mathiasnvd07@gmail.com?subject=Project%20RIP%20Bug%20Report" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
+                    🐛 Report Bug
+                </a>
+            </div>
+            """
+        )
+
     # main app col
-    with gr.Column(elem_id="main-app", visible=False) as main_app_col:
+    with gr.Column(elem_id="main-app", visible=True) as main_app_col:
         with gr.Row(elem_classes=["header-row"]):
             with gr.Column(scale=8):
                 gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
             logout_btn = gr.Button(
-                "🚪 Log Out", size="sm", variant="secondary", scale=1, min_width=100
+                "ℹ️ About", size="sm", variant="secondary", scale=1, min_width=100
             )
 
         # control panel
@@ -1351,17 +1423,14 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         outputs=[char_selector, system_status, global_char_state, char_images_state],
     )
 
-    # logout button
-    logout_btn.click(
-        fn=logout,
-        inputs=None,
-        outputs=[
-            login_col,
-            main_app_col,
-            traffic_source_state,
-            pass_input,
-            login_error_msg,
-        ],
+    # info/about button
+    logout_btn.click(fn=show_info, inputs=None, outputs=[info_col, main_app_col]).then(
+        None, None, None, js="() => window.scrollTo(0, 0)"
+    )
+
+    # back to chat from info screen
+    back_btn.click(fn=back_to_chat, inputs=None, outputs=[info_col, main_app_col]).then(
+        None, None, None, js="() => window.scrollTo(0, 0)"
     )
 
     # main function on app load
