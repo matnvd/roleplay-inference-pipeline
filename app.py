@@ -1296,7 +1296,15 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
                     elem_classes="status-box",
                 )
 
-    js_focus = "() => document.querySelector('#chat-input textarea').focus()"
+    js_focus = """() => {
+        const ta = document.querySelector('#chat-input textarea');
+        if (ta) {
+            ta.style.height = 'auto';
+            ta.style.height = ta.scrollHeight + 'px';
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.focus();
+        }
+    }"""
 
     # events
     login_targets = [login_col, main_app_col, traffic_source_state, login_error_msg]
@@ -1323,7 +1331,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         fn=bot_response,
         inputs=[chatbot, char_state, session_state, temp_slider],
         outputs=[chatbot],
-    )
+    ).then(None, None, None, js=js_focus)
 
     # sending message (via send button)
     submit_btn.click(
@@ -1334,7 +1342,7 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         fn=bot_response,
         inputs=[chatbot, char_state, session_state, temp_slider],
         outputs=[chatbot],
-    )
+    ).then(None, None, None, js=js_focus)
 
     # any triggering of changing character, then trigger greeting
     char_selector.change(
