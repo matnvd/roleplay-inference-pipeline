@@ -178,14 +178,14 @@ custom_css = """
         box-shadow: none !important;
         background: transparent !important;
         padding: 0 !important;
-        
+        padding-top: 12px !important;
+
         max-width: 1200px !important;
         margin-left: auto !important;
         margin-right: auto !important;
 
         overflow: visible !important;
         height: auto !important;
-        # padding-top: 0px !important;
     }
 
     #main-app > .block,
@@ -196,15 +196,17 @@ custom_css = """
         background: transparent !important;
     }
 
-    /* HEADER ROW (Title + Logout) */
-    
-    /* Fix header scrollbars */
-    .header-row, 
-    .header-row > .col, 
+    /* HEADER ROW (Title + About button) */
+    .header-row,
+    .header-row > .col,
     .header-row .block {
         overflow: visible !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        padding: 0 !important;
     }
-    
+
     .header-row {
         align-items: center !important;
         margin-bottom: 10px !important;
@@ -212,6 +214,7 @@ custom_css = """
 
     .header-row h1 {
         margin: 0 !important;
+        line-height: 1 !important;
     }
 
     /* MAIN COLUMN FLEX CONTAINER */
@@ -287,12 +290,23 @@ custom_css = """
         background-color: rgba(82, 82, 82, 0.3) !important;
     }
 
+    /* Collapse Gradio outer wrappers when their inner screen is hidden,
+       so they never contribute phantom height to the page layout */
+    div:has(> #login-screen[style*="display: none"]),
+    div:has(> #info-screen[style*="display: none"]) {
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
     /* INFO SCREEN */
     #info-screen {
         max-width: 1200px !important;
         margin-left: auto !important;
         margin-right: auto !important;
-        padding-top: 20px !important;
+        padding-top: 12px !important;
     }
 
     #info-screen .block,
@@ -1051,14 +1065,12 @@ def verify_login(password):
         }
 
 
-# Show info/about screen
-def show_info():
-    return gr.Column(visible=True), gr.Column(visible=False)
-
-
-# Return to main app
-def back_to_chat():
-    return gr.Column(visible=False), gr.Column(visible=True)
+# Toggle between chat and info panel
+def toggle_view(is_info):
+    if is_info:
+        return gr.Column(visible=False), gr.Row(visible=True), gr.Button(value="ℹ️ About"), False
+    else:
+        return gr.Column(visible=True), gr.Row(visible=False), gr.Button(value="← Back to Chat"), True
 
 
 ########################################
@@ -1135,65 +1147,56 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
 
         gr.HTML(embed_html, elem_id="login-demo-video")
 
-    # info screen (shown when user clicks the info button)
-    with gr.Column(elem_id="info-screen", visible=False) as info_col:
-        with gr.Row(elem_classes=["header-row"]):
-            with gr.Column(scale=8):
-                gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
-            back_btn = gr.Button(
-                "← Back to Chat", size="sm", variant="secondary", scale=1, min_width=100
-            )
-
-        gr.Markdown(
-            """
-            A RAG-powered chatbot that lets you roleplay with any character from Wikipedia or Fandom Wiki.
-            Upload a character's wiki page, and the AI will embody them using retrieved memories from the source.
-            """,
-            elem_classes=["prose"],
-        )
-
-        gr.HTML(
-            """
-            <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
-                <iframe width="644" height="400"
-                    src="https://www.youtube.com/embed/2Y4AmMF2oZM?si=hF2Go23ietXc0V5t"
-                    title="YouTube video player"
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen
-                    style="border-radius: 12px;">
-                </iframe>
-            </div>
-            """,
-            elem_id="login-demo-video",
-        )
-
-        gr.HTML(
-            """
-            <div style="text-align: center; margin-top: 20px; font-size: 1.1em;">
-                <a href="https://github.com/matnvd/roleplay-inference-pipeline" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-right: 15px;">
-                    📂 GitHub Repository
-                </a>
-
-                <span style="color: gray;">|</span>
-
-                <a href="mailto:mathiasnvd07@gmail.com?subject=Project%20RIP%20Bug%20Report" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
-                    🐛 Report Bug
-                </a>
-            </div>
-            """
-        )
-
-    # main app col
+    # main app col — single top-level column, info panel nested inside
     with gr.Column(elem_id="main-app", visible=True) as main_app_col:
+        is_info_state = gr.State(False)
+
         with gr.Row(elem_classes=["header-row"]):
             with gr.Column(scale=8):
                 gr.Markdown("# 🪦 Project RIP: Roleplay Inference Pipeline")
-            logout_btn = gr.Button(
-                "ℹ️ About", size="sm", variant="secondary", scale=1, min_width=100
+            toggle_btn = gr.Button(
+                "ℹ️ About", size="sm", variant="secondary", scale=1, min_width=130
             )
 
-        # control panel
-        with gr.Row():
+        # info panel — nested so no phantom wrapper outside main-app
+        with gr.Column(visible=False, elem_id="info-screen") as info_content_col:
+            gr.Markdown(
+                """
+                A RAG-powered chatbot that lets you roleplay with any character from Wikipedia or Fandom Wiki.
+                Upload a character's wiki page, and the AI will embody them using retrieved memories from the source.
+                """,
+                elem_classes=["prose"],
+            )
+            gr.HTML(
+                """
+                <div style="text-align: center; margin-top: 20px; font-size: 1.1em;">
+                    <a href="https://github.com/matnvd/roleplay-inference-pipeline" target="_blank" style="text-decoration: none; color: var(--color-accent); margin-right: 15px;">
+                        📂 GitHub Repository
+                    </a>
+                    <span style="color: gray;">|</span>
+                    <a href="mailto:mathiasnvd07@gmail.com?subject=Project%20RIP%20Bug%20Report" style="text-decoration: none; color: var(--color-accent); margin-left: 15px;">
+                        🐛 Report Bug
+                    </a>
+                </div>
+                """
+            )
+            gr.HTML(
+                """
+                <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+                    <iframe width="644" height="400"
+                        src="https://www.youtube.com/embed/2Y4AmMF2oZM?si=hF2Go23ietXc0V5t"
+                        title="YouTube video player" frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen
+                        style="border-radius: 12px;">
+                    </iframe>
+                </div>
+                """,
+                elem_id="login-demo-video",
+            )
+
+        # chat panel
+        with gr.Row(visible=True) as main_content_col:
             with gr.Column(scale=4, elem_id="main-col"):
                 chatbot = gr.Chatbot(
                     label="No Character Selected",
@@ -1423,14 +1426,11 @@ with gr.Blocks(title="Project RIP Chatbot") as main:
         outputs=[char_selector, system_status, global_char_state, char_images_state],
     )
 
-    # info/about button
-    logout_btn.click(fn=show_info, inputs=None, outputs=[info_col, main_app_col]).then(
-        None, None, None, js="() => window.scrollTo(0, 0)"
-    )
-
-    # back to chat from info screen
-    back_btn.click(fn=back_to_chat, inputs=None, outputs=[info_col, main_app_col]).then(
-        None, None, None, js="() => window.scrollTo(0, 0)"
+    # toggle between chat and info panel
+    toggle_btn.click(
+        fn=toggle_view,
+        inputs=[is_info_state],
+        outputs=[info_content_col, main_content_col, toggle_btn, is_info_state],
     )
 
     # main function on app load
